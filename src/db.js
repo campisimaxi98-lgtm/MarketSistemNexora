@@ -173,11 +173,8 @@ function seed() {
     ['Efectivo', 'Tarjeta de débito', 'Tarjeta de crédito', 'Transferencia', 'Mercado Pago', 'Otro'].forEach((m) => st.run(m));
   }
 
-  if (count('usuarios') === 0) {
-    const bcrypt = require('bcryptjs');
-    const hash = bcrypt.hashSync('admin123', 10);
-    db.prepare('INSERT INTO usuarios (nombre, usuario, password_hash, rol) VALUES (?,?,?,?)').run('Administrador', 'admin', hash, 'ADMIN');
-  }
+  // No se crea ningún usuario por defecto: la primera cuenta que se registra
+  // en la pantalla de inicio queda como dueño (ADMIN) del negocio.
 
   const defs = {
     nombre_comercio: 'MarketSistemNexora',

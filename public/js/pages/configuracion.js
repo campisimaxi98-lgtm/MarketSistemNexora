@@ -38,7 +38,7 @@
       if (!tbody) return;
       tbody.innerHTML = rows.map(function (u) {
         return '<tr><td>' + U.esc(u.nombre) + '</td><td>' + U.esc(u.usuario) + '</td>' +
-          '<td>' + (u.rol === 'ADMIN' ? '<span class="badge badge-info">Admin</span>' : '<span class="badge badge-muted">Cajero</span>') + '</td>' +
+          '<td>' + (u.rol === 'ADMIN' ? '<span class="badge badge-info">Dueño</span>' : '<span class="badge badge-muted">Empleado</span>') + '</td>' +
           '<td>' + (u.esta_activo ? '<span class="badge badge-ok">Activo</span>' : '<span class="badge badge-muted">Inactivo</span>') + '</td>' +
           '<td><button class="btn btn-sm" data-us="edit" data-id="' + u.id + '">Editar</button> <button class="btn btn-sm" data-us="toggle" data-id="' + u.id + '" data-act="' + u.esta_activo + '">' + (u.esta_activo ? 'Desactivar' : 'Activar') + '</button></td></tr>';
       }).join('') || U.tableEmpty(5, 'Sin usuarios');
@@ -96,7 +96,7 @@
       '<label>Nombre<input id="us-nombre" value="' + U.esc(u.nombre || '') + '"></label>' +
       '<label>Usuario<input id="us-usuario" value="' + U.esc(u.usuario || '') + '" ' + (esNuevo ? '' : 'disabled') + '></label>' +
       '<div class="form-row">' +
-      '<label>Rol<select id="us-rol"><option value="CAJERO"' + (u.rol === 'CAJERO' ? ' selected' : '') + '>Cajero</option><option value="ADMIN"' + (u.rol === 'ADMIN' ? ' selected' : '') + '>Administrador</option></select></label>' +
+      '<label>Rol<select id="us-rol"><option value="CAJERO"' + (u.rol === 'CAJERO' ? ' selected' : '') + '>Empleado</option><option value="ADMIN"' + (u.rol === 'ADMIN' ? ' selected' : '') + '>Dueño (administrador)</option></select></label>' +
       '<label>Contraseña' + (esNuevo ? '' : ' <small>(dejar vacío para no cambiar)</small>') + '<input id="us-pass" type="password"></label>' +
       '</div>';
     var m = U.modal({

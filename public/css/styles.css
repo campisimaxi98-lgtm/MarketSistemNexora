@@ -61,6 +61,12 @@ p { margin: 4px 0; }
 .login-brand { font-size: 22px; font-weight: 700; }
 .login-sub { color: var(--muted); margin: 4px 0 20px; }
 .login-error { color: var(--danger); margin-top: 12px; font-size: 13px; }
+.login-alt { text-align: center; margin: 16px 0 0; font-size: 13px; color: var(--muted); }
+.login-alt a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.login-alt a:hover { text-decoration: underline; }
+.login-nota { font-size: 12px; color: var(--muted); background: rgba(99,102,241,.08); border-radius: 8px; padding: 8px 10px; margin: 4px 0 14px; }
+.radio { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 8px 0; }
+.radio input { width: auto; margin: 0; }
 
 /* ---------- Shell ---------- */
 #app-view { display: flex; min-height: 100vh; }

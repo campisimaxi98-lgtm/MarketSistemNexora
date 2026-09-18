@@ -40,6 +40,41 @@ router.post('/cambiar-password', handle((req, res) => {
   res.json({ ok: true });
 }));
 
+router.get('/registro-info', handle((req, res) => {
+  const db = getDB();
+  const hayDueno = db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'ADMIN'").get().c > 0;
+  const total = db.prepare('SELECT COUNT(*) c FROM usuarios').get().c;
+  res.json({ hay_dueno: hayDueno, primer_usuario: total === 0 });
+}));
+
+router.post('/registro', handle((req, res) => {
+  const { nombre, usuario, password, rol } = req.body || {};
+  if (!nombre || !usuario || !password) return res.status(400).json({ error: 'Nombre, usuario y contraseña son obligatorios' });
+  if (String(password).length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' });
+  const uA = String(usuario).trim();
+  if (uA.length < 3) return res.status(400).json({ error: 'El usuario debe tener al menos 3 caracteres' });
+  const db = getDB();
+  const hayDueno = db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'ADMIN'").get().c > 0;
+  let rolFinal;
+  if (!hayDueno) {
+    rolFinal = 'ADMIN';
+  } else if (rol === 'DUENO') {
+    return res.status(400).json({ error: 'Ya existe un dueño registrado. Pedile que te cree una cuenta de empleado desde Configuración.' });
+  } else {
+    rolFinal = 'CAJERO';
+  }
+  if (db.prepare('SELECT 1 FROM usuarios WHERE usuario = ?').get(uA)) {
+    return res.status(400).json({ error: 'Ese usuario ya existe' });
+  }
+  const hash = bcrypt.hashSync(String(password), 10);
+  const info = db.prepare('INSERT INTO usuarios (nombre, usuario, password_hash, rol) VALUES (?,?,?,?)')
+    .run(String(nombre).trim(), uA, hash, rolFinal);
+  const user = { id: Number(info.lastInsertRowid), nombre: String(nombre).trim(), usuario: uA, rol: rolFinal };
+  req.session.user = user;
+  audit(user, 'REGISTRO', 'Cuenta creada como ' + (rolFinal === 'ADMIN' ? 'dueño' : 'empleado'));
+  res.json({ ok: true, user });
+}));
+
 router.post('/usuarios', handle((req, res) => {
   if (!req.session.user || req.session.user.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo administrador' });
   const { nombre, usuario, password, rol } = req.body || {};

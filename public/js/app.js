@@ -20,6 +20,18 @@
         App.login();
       });
       document.getElementById('btn-logout').addEventListener('click', App.logout);
+      document.getElementById('link-registro').addEventListener('click', function (e) {
+        e.preventDefault();
+        App.showRegistro();
+      });
+      document.getElementById('link-login').addEventListener('click', function (e) {
+        e.preventDefault();
+        App.showLogin();
+      });
+      document.getElementById('registro-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        App.registro();
+      });
       App.setFecha();
       App.check();
       window.addEventListener('hashchange', App.routeChange);
@@ -45,14 +57,68 @@
         var r = await U.api('GET', '/auth/me');
         App.showApp(r.user);
       } catch (e) {
-        App.showLogin();
+        var info = null;
+        try { info = await U.api('GET', '/auth/registro-info'); } catch (e2) {}
+        if (info && info.primer_usuario) App.showRegistro();
+        else App.showLogin();
       }
     },
 
     showLogin: function () {
       document.getElementById('app-view').hidden = true;
       document.getElementById('login-view').hidden = false;
+      document.getElementById('registro-card').hidden = true;
+      document.getElementById('login-card').hidden = false;
       document.getElementById('login-usuario').focus();
+    },
+
+    showRegistro: async function () {
+      document.getElementById('login-card').hidden = true;
+      document.getElementById('registro-card').hidden = false;
+      var err = document.getElementById('reg-error');
+      err.hidden = true;
+      var info = { hay_dueno: true, primer_usuario: false };
+      try { info = await U.api('GET', '/auth/registro-info'); } catch (e) {}
+      var dueno = document.getElementById('reg-rol-dueno');
+      var empleado = document.getElementById('reg-rol-empleado');
+      var nota = document.getElementById('reg-nota');
+      if (!info.hay_dueno) {
+        dueno.disabled = false;
+        dueno.checked = true;
+        nota.textContent = info.primer_usuario
+          ? 'Sos el primer usuario: esta cuenta quedará como dueño del negocio.'
+          : 'Todavía no hay un dueño registrado: esta cuenta quedará como dueño del negocio.';
+        nota.hidden = false;
+      } else {
+        dueno.disabled = true;
+        empleado.checked = true;
+        nota.textContent = 'Ya existe un dueño. Las cuentas nuevas se crean como empleado.';
+        nota.hidden = false;
+      }
+      document.getElementById('reg-nombre').focus();
+    },
+
+    registro: async function () {
+      var err = document.getElementById('reg-error');
+      err.hidden = true;
+      var pass = document.getElementById('reg-password').value;
+      var pass2 = document.getElementById('reg-password2').value;
+      if (pass.length < 4) { err.textContent = 'La contraseña debe tener al menos 4 caracteres'; err.hidden = false; return; }
+      if (pass !== pass2) { err.textContent = 'Las contraseñas no coinciden'; err.hidden = false; return; }
+      var rolEl = document.querySelector('input[name="reg-rol"]:checked');
+      try {
+        var r = await U.api('POST', '/auth/registro', {
+          nombre: document.getElementById('reg-nombre').value,
+          usuario: document.getElementById('reg-usuario').value,
+          password: pass,
+          rol: rolEl ? rolEl.value : 'EMPLEADO'
+        });
+        document.getElementById('registro-form').reset();
+        await App.showApp(r.user);
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+      }
     },
 
     showApp: async function (user) {
@@ -60,7 +126,7 @@
       document.getElementById('login-view').hidden = true;
       document.getElementById('app-view').hidden = false;
       document.getElementById('app-user').textContent = user.nombre;
-      document.getElementById('app-rol').textContent = user.rol === 'ADMIN' ? 'Administrador' : 'Cajero';
+      document.getElementById('app-rol').textContent = user.rol === 'ADMIN' ? 'Dueño' : 'Empleado';
       var nombre = (user.rol === 'ADMIN') ? await App.loadConfig() : null;
       document.getElementById('login-nombre').textContent = 'MarketSistemNexora';
       document.getElementById('app-nombre').textContent = (App.config && App.config.nombre_comercio) ? App.config.nombre_comercio : 'MarketSistemNexora';

@@ -1,11 +1,13 @@
 # Manual de uso — MarketSistemNexora
 
-## 1. Ingreso
+## 1. Ingreso y cuentas
 
-- Abrí el navegador en `http://localhost:3000`.
-- Logueate con tu usuario y contraseña.
-- **Funciones de administrador** (productos, precios, configuración): solo las ve quien tiene rol ADMIN.
-- **Cajero**: puede vender, hacer entradas de stock, abrir/cerrar caja y ver reportes de su caja.
+- **App de escritorio**: abrí **MarketSistemNexora** desde el escritorio o el menú Inicio.
+- **Modo web**: abrí el navegador en `http://localhost:3000`.
+- **Crear cuenta** (primer uso): la primera cuenta que se registra desde la pantalla de inicio queda como **Dueño**. Las cuentas nuevas que se registren después quedan como **Empleado**.
+- El **Dueño** puede crear otros usuarios y asignar rol (Dueño o Empleado) desde **Configuración → Usuarios**.
+- **Funciones del Dueño** (productos, precios, configuración): solo las ve quien tiene rol Dueño/ADMIN.
+- **Empleado**: puede vender, hacer entradas de stock, abrir/cerrar caja y ver reportes de su caja. No administra usuarios ni configuración.
 
 ## 2. Ventas (POS)
 
@@ -78,9 +80,9 @@ Precios en **pesos argentinos** (se aceptan `$ 1.234,50` o `1234.50`).
 ## 8. Tickets
 
 - Listado, filtros por número/fecha, **ver detalle** (con productos y pagos) y **descargar PDF**.
-- **Anular una venta** (solo ADMIN): se marca anulada, se restituye el stock y se audita con el motivo.
+- **Anular una venta** (solo Dueño): se marca anulada, se restituye el stock y se audita con el motivo.
 
-## 9. Configuración (ADMIN)
+## 9. Configuración (solo Dueño)
 
 - **Datos del comercio**: nombre (sale en el ticket), dirección, teléfono, CUIT, moneda, stock mínimo por defecto.
 - **Ticket**: formato (ancho mm), mensaje al pie y opción de mostrar ganancia en el ticket.
@@ -88,14 +90,14 @@ Precios en **pesos argentinos** (se aceptan `$ 1.234,50` o `1234.50`).
 - **Backup**: hacer uno ahora, descargar, **restaurar** desde un archivo `.db` (valida que sea una base válida y guarda un backup previo de seguridad), y backup automático con frecuencia en horas (se mantienen hasta 30).
 - **Métodos de pago**: activar/desactivar.
 - **Categorías**: agregar categorías nuevas.
-- **Usuarios**: crear/editar/activar usuarios (cajeros o administradores). La contraseña se puede cambiar dejando el campo vacío en edición.
+- **Usuarios**: crear/editar/activar usuarios y asignarles rol **Dueño** o **Empleado**. La contraseña se puede cambiar dejando el campo vacío en edición.
 
 ## 10. Respaldos
 
 - Manuales: Configuración → Backup → **Hacer backup ahora**. Se guardan en `<carpeta de datos>/backups`.
 - Automáticos: cada N horas configurable, con depuración automática (últimos 30).
 - **Restaurar**: adjuntar un `.db` o elegir uno de la lista. Antes de restaurar se guarda un backup de seguridad.
-- Para respaldo manual externo: copiá la carpeta `data` completa (base + backups). Hacelo con el servidor **detenido**.
+- Carpeta de datos: en la app de escritorio es `%APPDATA%\MarketSistemNexora\datos`; en modo web es `data\` junto al proyecto. Para respaldo manual externo, copiá esa carpeta completa (base + backups) con la aplicación **cerrada**.
 
 ## 11. Anexo técnico
 

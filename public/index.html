@@ -9,7 +9,7 @@
 </head>
 <body>
   <div id="login-view">
-    <div class="login-card">
+    <div class="login-card" id="login-card">
       <div class="login-brand">🏪 <span id="login-nombre">MarketSistemNexora</span></div>
       <p class="login-sub">Sistema de gestión de tu negocio</p>
       <form id="login-form">
@@ -17,6 +17,28 @@
         <label>Contraseña<input id="login-password" type="password" autocomplete="current-password" required></label>
         <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
         <div id="login-error" class="login-error" hidden></div>
+      </form>
+      <p class="login-alt">¿No tenés cuenta? <a href="#" id="link-registro">Crear cuenta</a></p>
+    </div>
+
+    <div class="login-card" id="registro-card" hidden>
+      <div class="login-brand">🏪 <span>MarketSistemNexora</span></div>
+      <p class="login-sub">Crear cuenta</p>
+      <form id="registro-form">
+        <label>Nombre y apellido<input id="reg-nombre" autocomplete="name" required></label>
+        <label>Usuario<input id="reg-usuario" autocomplete="username" required></label>
+        <div class="form-row">
+          <label>Contraseña<input id="reg-password" type="password" autocomplete="new-password" required></label>
+          <label>Repetir contraseña<input id="reg-password2" type="password" autocomplete="new-password" required></label>
+        </div>
+        <div id="reg-roles">
+          <label class="radio"><input type="radio" name="reg-rol" value="DUENO" id="reg-rol-dueno"> Soy el <strong>dueño</strong> del negocio</label>
+          <label class="radio"><input type="radio" name="reg-rol" value="EMPLEADO" id="reg-rol-empleado" checked> Soy <strong>empleado</strong></label>
+        </div>
+        <p id="reg-nota" class="login-nota" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block">Crear cuenta</button>
+        <div id="reg-error" class="login-error" hidden></div>
+        <p class="login-alt"><a href="#" id="link-login">Volver al ingreso</a></p>
       </form>
     </div>
   </div>
