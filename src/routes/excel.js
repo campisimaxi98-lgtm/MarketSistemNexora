@@ -61,7 +61,7 @@ async function leerFilas(buffer) {
   return filas;
 }
 
-router.post('/importar', express.raw({ type: () => true, limit: '25mb' }),
+router.post('/importar', express.raw({ type: () => true, limit: '25mb' }), requireAuth, requireAdmin,
   handle(async (req, res) => {
     if (!req.body || !req.body.length) return res.status(400).json({ error: 'Archivo vacío' });
     const db = getDB();
@@ -83,7 +83,10 @@ router.post('/importar', express.raw({ type: () => true, limit: '25mb' }),
       const pc = parseNum(raw.precio_costo);
       if (raw.precio_venta !== undefined && pv === null) errs.push('Precio de venta inválido');
       if (raw.precio_costo !== undefined && pc === null) errs.push('Precio de costo inválido');
-      if (raw.stock !== undefined && parseNum(raw.stock) === null) errs.push('Stock inválido');
+      if (raw.stock !== undefined) {
+        const stk = parseNum(raw.stock);
+        if (stk === null || stk < 0) errs.push('Stock inválido');
+      }
 
       const codigoClave = String(raw.codigo_barras || raw.codigo_interno || raw.codigo_qr || '').trim();
       if (codigoClave) {
@@ -151,58 +154,80 @@ router.post('/aplicar', requireAdmin, handle(async (req, res) => {
     VALUES (?,?,?,?,?,?,?)`);
 
   const stockMinimoDef = Number(getConfig('stock_minimo_default')) || 10;
-  let creados = 0, actualizados = 0, conPrecio = 0;
+  let creados = 0, actualizados = 0, conPrecio = 0, creadoSeq = 0;
   const mapaNuevos = new Map();
 
-  for (const r of filas) {
-    const nombre = String(r.nombre || '').trim();
-    const codigoB = r.codigo_barras ? String(r.codigo_barras).trim() : null;
-    const codigoI = r.codigo_interno ? String(r.codigo_interno).trim() : null;
-    const codigoQ = r.codigo_qr ? String(r.codigo_qr).trim() : null;
-    const pv = r.precio_venta !== undefined && r.precio_venta !== null && r.precio_venta !== '' ? round2(Number(r.precio_venta)) : null;
-    const pc = r.precio_costo !== undefined && r.precio_costo !== null && r.precio_costo !== '' ? round2(Number(r.precio_costo)) : null;
-    const stock = r.stock !== undefined && r.stock !== null && r.stock !== '' ? Number(r.stock) : null;
-    const clave = codigoB || codigoI || codigoQ || `nombre:${nombre.toLowerCase()}`;
+  db.exec('BEGIN');
+  try {
+    for (const r of filas) {
+      const nombre = String(r.nombre || '').trim();
+      const codigoB = r.codigo_barras ? String(r.codigo_barras).trim() : null;
+      const codigoI = r.codigo_interno ? String(r.codigo_interno).trim() : null;
+      const codigoQ = r.codigo_qr ? String(r.codigo_qr).trim() : null;
+      const pv = r.precio_venta !== undefined && r.precio_venta !== null && r.precio_venta !== '' ? round2(Number(r.precio_venta)) : null;
+      const pc = r.precio_costo !== undefined && r.precio_costo !== null && r.precio_costo !== '' ? round2(Number(r.precio_costo)) : null;
+      const stock = r.stock !== undefined && r.stock !== null && r.stock !== '' ? Number(r.stock) : null;
+      if (stock !== null && (!(stock >= 0) || isNaN(stock))) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ error: `Stock inválido en la fila ${r.fila_excel || '?'}` });
+      }
+      const clave = codigoB || codigoI || codigoQ || `nombre:${nombre.toLowerCase()}`;
 
-    let catId = null;
-    if (r.categoria && String(r.categoria).trim() && String(r.categoria).trim().toLowerCase() !== 'sin categoría') {
-      const norm = normalize(r.categoria);
-      catId = catCache[norm];
-      if (!catId) {
-        stCat.run(String(r.categoria).trim());
-        catId = getDB().prepare('SELECT id FROM categorias WHERE nombre = ? COLLATE NOCASE').get(String(r.categoria).trim()).id;
-        catCache[norm] = catId;
+      let catId = null;
+      if (r.categoria && String(r.categoria).trim() && String(r.categoria).trim().toLowerCase() !== 'sin categoría') {
+        const norm = normalize(r.categoria);
+        catId = catCache[norm];
+        if (!catId) {
+          stCat.run(String(r.categoria).trim());
+          catId = getDB().prepare('SELECT id FROM categorias WHERE nombre = ? COLLATE NOCASE').get(String(r.categoria).trim()).id;
+          catCache[norm] = catId;
+        }
+      }
+
+      let existente = r.id_existente
+        ? db.prepare('SELECT * FROM productos WHERE id=?').get(Number(r.id_existente))
+        : (mapaNuevos.get(clave) ? db.prepare('SELECT * FROM productos WHERE id=?').get(mapaNuevos.get(clave)) : null);
+
+      if (existente) {
+        const nuevoPv = pv !== null ? pv : existente.precio_venta;
+        const nuevoPc = pc !== null ? pc : existente.precio_costo;
+        updPrecios.run(nombre || existente.nombre, catId !== null ? catId : existente.id_categoria, nuevoPc, nuevoPv, existente.id);
+        if ((pv !== null && pv !== existente.precio_venta) || (pc !== null && pc !== existente.precio_costo)) {
+          registrarPrecio(existente.id, nuevoPc, nuevoPv, req.session.user);
+          conPrecio++;
+        }
+        if (stock !== null && stock !== existente.stock) {
+          updStock.run(stock, existente.id);
+          insMov.run(existente.id, 'AJUSTE', round2(stock - existente.stock), existente.stock, stock, 'Importación Excel', req.session.user.id);
+        }
+        actualizados++;
+      } else {
+        let nuevoCodigoInterno = codigoI;
+        if (!nuevoCodigoInterno && !codigoB) {
+          const base = 'PRODUCTO-' + String(Date.now()).slice(-6);
+          for (let intento = 0; intento < 20; intento++) {
+            const candidato = base + '-' + Math.floor(Math.random() * 900 + 100);
+            if (!db.prepare('SELECT 1 FROM productos WHERE codigo_interno = ?').get(candidato)) {
+              nuevoCodigoInterno = candidato;
+              break;
+            }
+          }
+          if (!nuevoCodigoInterno) nuevoCodigoInterno = base + String(creadoSeq++).padStart(3, '0');
+        }
+        const info = crear.run(codigoB, codigoQ, nuevoCodigoInterno, nombre, catId, pc !== null ? pc : 0, pv !== null ? pv : 0, stock !== null ? stock : 0, stockMinimoDef);
+        const id = Number(info.lastInsertRowid);
+        mapaNuevos.set(clave, id);
+        registrarPrecio(id, pc !== null ? pc : 0, pv !== null ? pv : 0, req.session.user);
+        if (stock !== null && stock > 0) {
+          insMov.run(id, 'INICIAL', stock, 0, stock, 'Importación Excel', req.session.user.id);
+        }
+        creados++;
       }
     }
-
-    let existente = r.id_existente
-      ? db.prepare('SELECT * FROM productos WHERE id=?').get(Number(r.id_existente))
-      : (mapaNuevos.get(clave) ? db.prepare('SELECT * FROM productos WHERE id=?').get(mapaNuevos.get(clave)) : null);
-
-    if (existente) {
-      const nuevoPv = pv !== null ? pv : existente.precio_venta;
-      const nuevoPc = pc !== null ? pc : existente.precio_costo;
-      updPrecios.run(nombre || existente.nombre, catId !== null ? catId : existente.id_categoria, nuevoPc, nuevoPv, existente.id);
-      if ((pv !== null && pv !== existente.precio_venta) || (pc !== null && pc !== existente.precio_costo)) {
-        registrarPrecio(existente.id, nuevoPc, nuevoPv, req.session.user);
-        conPrecio++;
-      }
-      if (stock !== null && stock !== existente.stock) {
-        updStock.run(stock, existente.id);
-        insMov.run(existente.id, 'AJUSTE', round2(stock - existente.stock), existente.stock, stock, 'Importación Excel', req.session.user.id);
-      }
-      actualizados++;
-    } else {
-      const nuevoCodigoInterno = codigoI || (codigoB ? null : 'PRODUCTO-' + String(Date.now()).slice(-6) + '-' + Math.floor(Math.random() * 90 + 10));
-      const info = crear.run(codigoB, codigoQ, nuevoCodigoInterno, nombre, catId, pc !== null ? pc : 0, pv !== null ? pv : 0, stock !== null ? stock : 0, stockMinimoDef);
-      const id = Number(info.lastInsertRowid);
-      mapaNuevos.set(clave, id);
-      registrarPrecio(id, pc !== null ? pc : 0, pv !== null ? pv : 0, req.session.user);
-      if (stock !== null && stock > 0) {
-        insMov.run(id, 'INICIAL', stock, 0, stock, 'Importación Excel', req.session.user.id);
-      }
-      creados++;
-    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
   }
   audit(req.session.user, 'IMPORTAR_EXCEL', `${creados} creados, ${actualizados} actualizados, ${conPrecio} cambios de precio`);
   res.json({ ok: true, creados, actualizados, conPrecio });

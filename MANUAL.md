@@ -97,7 +97,7 @@ Precios en **pesos argentinos** (se aceptan `$ 1.234,50` o `1234.50`).
 - Manuales: Configuración → Backup → **Hacer backup ahora**. Se guardan en `<carpeta de datos>/backups`.
 - Automáticos: cada N horas configurable, con depuración automática (últimos 30).
 - **Restaurar**: adjuntar un `.db` o elegir uno de la lista. Antes de restaurar se guarda un backup de seguridad.
-- Carpeta de datos: en la app de escritorio es `%APPDATA%\MarketSistemNexora\datos`; en modo web es `data\` junto al proyecto. Para respaldo manual externo, copiá esa carpeta completa (base + backups) con la aplicación **cerrada**.
+- Carpeta de datos: en la app de escritorio y en modo web es `%APPDATA%\MarketSistemNexora\datos` (misma carpeta para ambos). Se puede cambiar con la variable `MINIMARKET_DATA`. Para respaldo manual externo, copiá esa carpeta completa (base + backups) con la aplicación **cerrada**.
 
 ## 11. Anexo técnico
 

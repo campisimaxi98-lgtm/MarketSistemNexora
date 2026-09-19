@@ -11,6 +11,21 @@ function saldoCajaActual(db, idCaja) {
   return row ? row.saldo : 0;
 }
 
+function recalcularSaldoCaja(db, idCaja) {
+  const caja = db.prepare('SELECT * FROM cajas WHERE id = ?').get(idCaja);
+  if (!caja) return;
+  const mvs = db.prepare('SELECT id, tipo, monto FROM movimientos_caja WHERE id_caja = ? ORDER BY id').all(idCaja);
+  let saldo = round2(caja.monto_apertura || 0);
+  const upd = db.prepare('UPDATE movimientos_caja SET saldo = ? WHERE id = ?');
+  for (const m of mvs) {
+    if (m.tipo === 'APERTURA' || m.tipo === 'CIERRE') saldo = round2(m.monto);
+    else if (m.tipo === 'EGRESO' || m.tipo === 'RETIRO') saldo = round2(saldo - m.monto);
+    else saldo = round2(saldo + m.monto);
+    upd.run(saldo, m.id);
+  }
+  return saldo;
+}
+
 router.post('/', requireAuth, handle((req, res) => {
   const body = req.body || {};
   const items = Array.isArray(body.items) ? body.items : [];
@@ -152,6 +167,11 @@ router.post('/:id/anular', requireAdmin, handle((req, res) => {
         db.prepare(`INSERT INTO movimientos_stock (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo, id_usuario, id_venta)
           VALUES (?,?,?,?,?,?,?,?)`).run(prod.id, 'ENTRADA', d.cantidad, prod.stock, nuevo, 'ANULACION VENTA ' + v.numero, req.session.user.id, id);
       }
+    }
+    const cajasAfectadas = db.prepare('SELECT DISTINCT id_caja FROM movimientos_caja WHERE id_venta = ? AND tipo = ?').all(id, 'VENTA');
+    if (cajasAfectadas.length) {
+      db.prepare('DELETE FROM movimientos_caja WHERE id_venta = ? AND tipo = ?').run(id, 'VENTA');
+      for (const c of cajasAfectadas) recalcularSaldoCaja(db, Number(c.id_caja));
     }
     db.exec('COMMIT');
     audit(req.session.user, 'ANULAR_VENTA', v.numero + ' - ' + (req.body.motivo || ''));

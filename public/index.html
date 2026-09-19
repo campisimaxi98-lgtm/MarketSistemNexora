@@ -13,11 +13,12 @@
       <div class="login-brand">🏪 <span id="login-nombre">MarketSistemNexora</span></div>
       <p class="login-sub">Sistema de gestión de tu negocio</p>
       <form id="login-form">
-        <label>Usuario<input id="login-usuario" autocomplete="username" required autofocus></label>
+        <label>Usuario o email<input id="login-usuario" autocomplete="username" required autofocus></label>
         <label>Contraseña<input id="login-password" type="password" autocomplete="current-password" required></label>
         <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
         <div id="login-error" class="login-error" hidden></div>
       </form>
+      <p class="login-alt"><a href="#" id="link-recu">¿Olvidaste tu contraseña?</a></p>
       <p class="login-alt">¿No tenés cuenta? <a href="#" id="link-registro">Crear cuenta</a></p>
     </div>
 
@@ -27,6 +28,7 @@
       <form id="registro-form">
         <label>Nombre y apellido<input id="reg-nombre" autocomplete="name" required></label>
         <label>Usuario<input id="reg-usuario" autocomplete="username" required></label>
+        <label>Email <small>(opcional, se usa para recuperar la contraseña)</small><input id="reg-email" type="email" autocomplete="email"></label>
         <div class="form-row">
           <label>Contraseña<input id="reg-password" type="password" autocomplete="new-password" required></label>
           <label>Repetir contraseña<input id="reg-password2" type="password" autocomplete="new-password" required></label>
@@ -39,6 +41,23 @@
         <button type="submit" class="btn btn-primary btn-block">Crear cuenta</button>
         <div id="reg-error" class="login-error" hidden></div>
         <p class="login-alt"><a href="#" id="link-login">Volver al ingreso</a></p>
+      </form>
+    </div>
+
+    <div class="login-card" id="recu-card" hidden>
+      <div class="login-brand">🏪 <span>MarketSistemNexora</span></div>
+      <p class="login-sub">Recuperar contraseña</p>
+      <form id="recu-form">
+        <label>Usuario o email<input id="recu-usuario" autocomplete="username" required autofocus></label>
+        <label>Código de recuperación<input id="recu-codigo" autocomplete="off" required></label>
+        <div class="form-row">
+          <label>Nueva contraseña<input id="recu-password" type="password" autocomplete="new-password" required></label>
+          <label>Repetir contraseña<input id="recu-password2" type="password" autocomplete="new-password" required></label>
+        </div>
+        <p class="login-nota">El código de recuperación te lo entregamos al crear tu cuenta. Guardalo en un lugar seguro.</p>
+        <button type="submit" class="btn btn-primary btn-block">Cambiar contraseña</button>
+        <div id="recu-error" class="login-error" hidden></div>
+        <p class="login-alt"><a href="#" id="link-recu-volver">Volver al ingreso</a></p>
       </form>
     </div>
   </div>

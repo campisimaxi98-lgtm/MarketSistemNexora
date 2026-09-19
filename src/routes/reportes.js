@@ -9,10 +9,7 @@ const router = express.Router();
 router.get('/dashboard', requireAuth, handle((req, res) => {
   const db = getDB();
   const hoy = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
-  const hoyStr = iso(hoy);
   const hoyLocal = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-  void hoyStr;
 
   const resumenHoy = totalVentasPeriodo(hoyLocal, hoyLocal);
 
@@ -84,21 +81,23 @@ router.get('/productos', requireAuth, handle((req, res) => {
   const db = getDB();
   const { desde, hasta } = req.query;
   const { mas_vendidos = '1', menos_vendidos = '0', sin_movimiento = '0', stock_bajo = '0', limite = 30 } = req.query;
-  const rango = (!desde || !hasta) ? `1=1` : `date(v.creado_en) BETWEEN '${desde}' AND '${hasta}'`;
+  const tieneFecha = !!(desde && hasta);
+  const condFecha = tieneFecha ? 'date(v.creado_en) BETWEEN @desde AND @hasta' : '1 = 1';
+  const paramsFecha = tieneFecha ? { desde, hasta } : {};
   if (mas_vendidos === '1') {
     const rows = db.prepare(`
       SELECT dv.nombre, SUM(dv.cantidad) cantidad, SUM(dv.total) total, ROUND(SUM(dv.ganancia),2) ganancia
       FROM detalle_ventas dv JOIN ventas v ON v.id=dv.id_venta
-      WHERE v.estado='COMPLETADA' AND ${rango}
-      GROUP BY dv.nombre ORDER BY cantidad DESC, dv.nombre LIMIT ?`).all(Number(limite));
+      WHERE v.estado='COMPLETADA' AND ${condFecha}
+      GROUP BY dv.nombre ORDER BY cantidad DESC, dv.nombre LIMIT @lim`).all({ ...paramsFecha, lim: Number(limite) });
     return res.json({ tipo: 'mas_vendidos', filas: rows });
   }
   if (menos_vendidos === '1') {
     const rows = db.prepare(`
       SELECT dv.nombre, SUM(dv.cantidad) cantidad, SUM(dv.total) total
       FROM detalle_ventas dv JOIN ventas v ON v.id=dv.id_venta
-      WHERE v.estado='COMPLETADA' AND ${rango}
-      GROUP BY dv.nombre ORDER BY cantidad ASC, dv.nombre LIMIT ?`).all(Number(limite));
+      WHERE v.estado='COMPLETADA' AND ${condFecha}
+      GROUP BY dv.nombre ORDER BY cantidad ASC, dv.nombre LIMIT @lim`).all({ ...paramsFecha, lim: Number(limite) });
     return res.json({ tipo: 'menos_vendidos', filas: rows });
   }
   if (sin_movimiento === '1') {
@@ -107,8 +106,8 @@ router.get('/productos', requireAuth, handle((req, res) => {
       FROM productos p LEFT JOIN categorias c ON c.id=p.id_categoria
       WHERE p.esta_activo=1 AND NOT EXISTS (
         SELECT 1 FROM detalle_ventas dv JOIN ventas v ON v.id=dv.id_venta
-        WHERE dv.id_producto=p.id AND v.estado='COMPLETADA' AND ${rango.replaceAll('v.creado_en', 'v.creado_en')})
-      ORDER BY p.nombre COLLATE NOCASE LIMIT ?`).all(Number(limite));
+        WHERE dv.id_producto=p.id AND v.estado='COMPLETADA' AND ${condFecha})
+      ORDER BY p.nombre COLLATE NOCASE LIMIT @lim`).all({ ...paramsFecha, lim: Number(limite) });
     return res.json({ tipo: 'sin_movimiento', filas: rows });
   }
   if (stock_bajo === '1') {
@@ -116,7 +115,7 @@ router.get('/productos', requireAuth, handle((req, res) => {
       SELECT p.id, p.nombre, p.codigo_barras, p.stock, p.stock_minimo, p.precio_venta, c.nombre AS categoria
       FROM productos p LEFT JOIN categorias c ON c.id=p.id_categoria
       WHERE p.esta_activo=1 AND p.stock_minimo>0 AND p.stock<=p.stock_minimo
-      ORDER BY p.stock ASC LIMIT ?`).all(Number(limite));
+      ORDER BY p.stock ASC LIMIT @lim`).all({ lim: Number(limite) });
     return res.json({ tipo: 'stock_bajo', filas: rows });
   }
   res.json({ tipo: 'none', filas: [] });

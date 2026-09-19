@@ -28,9 +28,21 @@
         e.preventDefault();
         App.showLogin();
       });
+      document.getElementById('link-recu').addEventListener('click', function (e) {
+        e.preventDefault();
+        App.showRecu();
+      });
+      document.getElementById('link-recu-volver').addEventListener('click', function (e) {
+        e.preventDefault();
+        App.showLogin();
+      });
       document.getElementById('registro-form').addEventListener('submit', function (e) {
         e.preventDefault();
         App.registro();
+      });
+      document.getElementById('recu-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        App.recuperar();
       });
       App.setFecha();
       App.check();
@@ -68,8 +80,18 @@
       document.getElementById('app-view').hidden = true;
       document.getElementById('login-view').hidden = false;
       document.getElementById('registro-card').hidden = true;
+      document.getElementById('recu-card').hidden = true;
       document.getElementById('login-card').hidden = false;
       document.getElementById('login-usuario').focus();
+    },
+
+    showRecu: function () {
+      document.getElementById('app-view').hidden = true;
+      document.getElementById('login-view').hidden = false;
+      document.getElementById('login-card').hidden = true;
+      document.getElementById('registro-card').hidden = true;
+      document.getElementById('recu-card').hidden = false;
+      document.getElementById('recu-usuario').focus();
     },
 
     showRegistro: async function () {
@@ -110,15 +132,49 @@
         var r = await U.api('POST', '/auth/registro', {
           nombre: document.getElementById('reg-nombre').value,
           usuario: document.getElementById('reg-usuario').value,
+          email: document.getElementById('reg-email').value,
           password: pass,
           rol: rolEl ? rolEl.value : 'EMPLEADO'
         });
         document.getElementById('registro-form').reset();
+        if (r.codigo_recuperacion) App.mostrarCodigoRecuperacion(r.codigo_recuperacion);
         await App.showApp(r.user);
       } catch (e) {
         err.textContent = e.message;
         err.hidden = false;
       }
+    },
+
+    recuperar: async function () {
+      var err = document.getElementById('recu-error');
+      err.hidden = true;
+      var pass = document.getElementById('recu-password').value;
+      var pass2 = document.getElementById('recu-password2').value;
+      if (pass.length < 4) { err.textContent = 'La contraseña debe tener al menos 4 caracteres'; err.hidden = false; return; }
+      if (pass !== pass2) { err.textContent = 'Las contraseñas no coinciden'; err.hidden = false; return; }
+      try {
+        var r = await U.api('POST', '/auth/recuperar', {
+          usuario: document.getElementById('recu-usuario').value,
+          codigo: document.getElementById('recu-codigo').value,
+          password: pass
+        });
+        document.getElementById('recu-form').reset();
+        App.mostrarCodigoRecuperacion(r.codigo_recuperacion, 'Tu contraseña se cambió. Este es tu nuevo código de recuperación (reemplaza al anterior):');
+        App.showLogin();
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+      }
+    },
+
+    mostrarCodigoRecuperacion: function (codigo, texto) {
+      var txt = texto || 'Guardá este código: te sirve para recuperar tu contraseña si la olvidás. Mostralo solo una vez.';
+      U.modal({
+        titulo: 'Código de recuperación',
+        okText: 'Entendido',
+        html: '<p>' + U.esc(txt) + '</p>' +
+          '<div class="codigo-recu">' + U.esc(codigo) + '</div>'
+      });
     },
 
     showApp: async function (user) {

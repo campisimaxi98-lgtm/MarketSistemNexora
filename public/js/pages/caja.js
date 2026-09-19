@@ -42,8 +42,8 @@
       }).join('') || U.tableEmpty(5, 'Sin movimientos') +
       '</tbody></table></div></div>' +
       '<div class="flex end gap" style="gap:10px">' +
-      '<button class="btn" id="btn-mov" data-tipo="INGRESO">+ Ingreso</button>' +
-      '<button class="btn" id="btn-mov" data-tipo="EGRESO">− Egreso</button>' +
+      '<button class="btn btn-mov" data-tipo="INGRESO">+ Ingreso</button>' +
+      '<button class="btn btn-mov" data-tipo="EGRESO">− Egreso</button>' +
       '<button class="btn" data-tipo="RETIRO" data-act-retiro>Retirar</button>' +
       '<button class="btn btn-danger" id="btn-cierre">Cerrar caja</button>' +
       '</div>';
@@ -110,7 +110,7 @@
           cargar(document.getElementById('view'));
         }).catch(function (e) { U.toast(e.message, 'error'); });
       },
-      'click #btn-mov': function (e, t) {
+      'click .btn-mov': function (e, t) {
         var tipo = t.getAttribute('data-tipo');
         U.api('GET', '/caja/estado').then(function (d) { modalMovimiento(tipo, '', d.metodos || []); });
       },

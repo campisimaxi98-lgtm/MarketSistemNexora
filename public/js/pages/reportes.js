@@ -149,6 +149,7 @@
       return '<div class="flex mb" style="align-items:end;gap:10px">' +
         '<label style="margin:0">Desde<input type="date" id="rp-desde" value="' + U.hace7dias() + '"></label>' +
         '<label style="margin:0">Hasta<input type="date" id="rp-hasta" value="' + U.hoy() + '"></label>' +
+        '<button class="btn btn-primary" id="rp-ok">Ver</button>' +
         '</div>' +
         '<div class="tabs" data-global-tabs>' +
         '<button data-tab="ventas" class="active">Ventas</button>' +
@@ -189,7 +190,16 @@
         else if (tab === 'mensual') cargarResumenMensual(root);
         else if (tab === 'caja') cargarCajaReporte(root);
       },
-      'click #rp-ok': function () { cargarVentas(document.getElementById('view')); },
+      'click #rp-ok': function () {
+        var root = document.getElementById('view');
+        var act = root.querySelector('[data-global-tabs] [data-tab].active');
+        var tab = act ? act.getAttribute('data-tab') : 'ventas';
+        if (tab === 'ventas') cargarVentas(root);
+        else if (tab === 'ganancias') cargarGanancias(root);
+        else if (tab === 'productos') cargarProductosReporte(root);
+        else if (tab === 'mensual') cargarResumenMensual(root);
+        else if (tab === 'caja') cargarCajaReporte(root);
+      },
       'click #pr-ok': function () { cargarProductosReporte(document.getElementById('view')); },
       'click #rm-ok': function () { cargarResumenMensual(document.getElementById('view')); },
       'click [data-act-excel]': function (e, t) {

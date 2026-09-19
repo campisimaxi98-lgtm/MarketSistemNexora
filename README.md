@@ -81,7 +81,7 @@ public/
 ## Configuración de datos
 
 - **App de escritorio**: `%APPDATA%\MarketSistemNexora\datos`.
-- **Modo web**: `data/minimarket.db` (junto al proyecto).
+- **Modo web**: misma carpeta `%APPDATA%\MarketSistemNexora\datos` (unificada con la app de escritorio).
 
 Se puede cambiar la carpeta con la variable de entorno `MINIMARKET_DATA`, útil para instalaciones portables sobre pendrive:
 

@@ -8,7 +8,7 @@
     if (estado.search) q.push('search=' + encodeURIComponent(estado.search));
     if (estado.cat) q.push('categoria=' + estado.cat);
     if (estado.bajo) q.push('solo_bajo=1');
-    if (estado.inact) q.push('incluir_inactivos=1');
+    if (estado.inact === '1') q.push('incluir_inactivos=1');
     q.push('page=' + estado.page, 'limit=20');
     return '/productos?' + q.join('&');
   }
@@ -20,7 +20,9 @@
 
   function modalProducto(p) {
     var editar = !!p;
+    var esAdmin = App.user && App.user.rol === 'ADMIN';
     p = p || {};
+    var numLock = esAdmin ? '' : ' disabled';
     var html =
       (editar ? '<input type="hidden" id="mp-id" value="' + p.id + '">' : '') +
       '<label>Nombre *<input id="mp-nombre" value="' + U.esc(p.nombre || '') + '"></label>' +
@@ -35,10 +37,10 @@
       '<label>Código QR<div class="flex"><input id="mp-cq" value="' + U.esc(p.codigo_qr || '') + '"><button type="button" class="btn btn-sm" data-gen-cq>Generar</button></div></label>' +
       '</div>' +
       '<div class="form-row">' +
-      '<label>Precio costo<input id="mp-pc" type="number" step="0.01" min="0" value="' + (p.precio_costo || 0) + '"></label>' +
-      '<label>Precio venta<input id="mp-pv" type="number" step="0.01" min="0" value="' + (p.precio_venta || 0) + '"></label>' +
-      '<label>Stock<input id="mp-stock" type="number" step="0.01" min="0" value="' + (p.stock || 0) + '"></label>' +
-      '<label>Stock mínimo<input id="mp-min" type="number" step="0.01" min="0" value="' + (p.stock_minimo === undefined || p.stock_minimo === null ? 10 : p.stock_minimo) + '"></label>' +
+      '<label>Precio costo<input id="mp-pc" type="number" step="0.01" min="0" value="' + (p.precio_costo || 0) + '"' + numLock + '></label>' +
+      '<label>Precio venta<input id="mp-pv" type="number" step="0.01" min="0" value="' + (p.precio_venta || 0) + '"' + numLock + '></label>' +
+      '<label>Stock<input id="mp-stock" type="number" step="0.01" min="0" value="' + (p.stock || 0) + '"' + numLock + '></label>' +
+      '<label>Stock mínimo<input id="mp-min" type="number" step="0.01" min="0" value="' + (p.stock_minimo === undefined || p.stock_minimo === null ? 10 : p.stock_minimo) + '"' + numLock + '></label>' +
       '</div>' +
       (editar ? '<label><input type="checkbox" id="mp-activo" ' + (p.esta_activo ? 'checked' : '') + '> Producto activo</label>' : '');
     var m = U.modal({
@@ -51,12 +53,14 @@
           id_categoria: m.el.querySelector('#mp-cat').value || null,
           codigo_barras: m.el.querySelector('#mp-cb').value,
           codigo_interno: m.el.querySelector('#mp-ci').value,
-          codigo_qr: m.el.querySelector('#mp-cq').value,
-          precio_costo: m.el.querySelector('#mp-pc').value,
-          precio_venta: m.el.querySelector('#mp-pv').value,
-          stock: m.el.querySelector('#mp-stock').value,
-          stock_minimo: m.el.querySelector('#mp-min').value
+          codigo_qr: m.el.querySelector('#mp-cq').value
         };
+        if (esAdmin) {
+          body.precio_costo = m.el.querySelector('#mp-pc').value;
+          body.precio_venta = m.el.querySelector('#mp-pv').value;
+          body.stock = m.el.querySelector('#mp-stock').value;
+          body.stock_minimo = m.el.querySelector('#mp-min').value;
+        }
         var req = editar ? U.api('PUT', '/productos/' + estado.editarId, body) : U.api('POST', '/productos', body);
         req.then(function (r) {
           U.toast(editar ? 'Producto actualizado' : 'Producto creado', 'ok');
@@ -166,10 +170,10 @@
           '<td>' + (p.esta_activo ? '<span class="badge badge-ok">activo</span>' : '<span class="badge badge-muted">inactivo</span>') + '</td>' +
           '<td style="white-space:nowrap">' +
           '<button class="btn btn-sm" data-acc="edit" data-id="' + p.id + '">✏️</button> ' +
-          '<button class="btn btn-sm" data-acc="precio" data-id="' + p.id + '">$</button> ' +
+          (App.user && App.user.rol === 'ADMIN' ? '<button class="btn btn-sm" data-acc="precio" data-id="' + p.id + '">$</button> ' : '') +
           '<button class="btn btn-sm" data-acc="precios" data-id="' + p.id + '">📜</button> ' +
           '<button class="btn btn-sm" data-acc="etiqueta" data-id="' + p.id + '">🏷️</button> ' +
-          '<button class="btn btn-sm" data-acc="toggle" data-id="' + p.id + '">' + (p.esta_activo ? '⛔' : '✅') + '</button>' +
+          (App.user && App.user.rol === 'ADMIN' ? '<button class="btn btn-sm" data-acc="toggle" data-id="' + p.id + '">' + (p.esta_activo ? '⛔' : '✅') + '</button>' : '') +
           '</td></tr>';
       }).join('') || U.tableEmpty(8, 'No hay productos');
       document.getElementById('prods-total').textContent = 'Total: ' + d.total + ' · Página ' + d.page;

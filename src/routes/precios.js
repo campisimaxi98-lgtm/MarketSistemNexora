@@ -36,7 +36,8 @@ router.post('/masiva', requireAdmin, handle((req, res) => {
 
   const db = getDB();
   let productos = [];
-  if (alcance === 'categoria' && categoria_id) {
+  if (alcance === 'categoria') {
+    if (!categoria_id) return res.status(400).json({ error: 'Indique la categoría para aplicar el cambio' });
     productos = db.prepare('SELECT * FROM productos WHERE id_categoria = ? AND esta_activo = 1').all(Number(categoria_id));
   } else if (alcance === 'ids' && Array.isArray(ids) && ids.length) {
     const marks = ids.map(() => '?').join(',');

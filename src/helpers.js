@@ -1,4 +1,17 @@
-const { getDB } = require('./db');
+const { getDB, round2 } = require('./db');
+const crypto = require('node:crypto');
+
+function generarCodigoRecuperacion(largo = 10) {
+  const alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(largo);
+  let codigo = '';
+  for (let i = 0; i < largo; i++) codigo += alfabeto[bytes[i] % alfabeto.length];
+  return codigo;
+}
+
+function esEmailValido(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+}
 
 function audit(usuario, accion, detalle) {
   const id = usuario && usuario.id ? usuario.id : null;
@@ -38,7 +51,9 @@ function totalVentasPeriodo(desde, hasta) {
     COALESCE(SUM(costo_total),0) costo, COUNT(*) ventas,
     COALESCE(SUM((SELECT COALESCE(SUM(cantidad),0) FROM detalle_ventas d WHERE d.id_venta = v.id)),0) unidades
     FROM ventas v WHERE estado='COMPLETADA' AND date(creado_en) BETWEEN ? AND ?`).get(desde, hasta);
+  r.total = Number(r.total);
+  r.margen = r.total > 0 ? round2((Number(r.ganancia) / r.total) * 100) : 0;
   return r;
 }
 
-module.exports = { audit, registrarPrecio, registrarMovimientoStock, proximoNumeroVenta, totalVentasPeriodo };
+module.exports = { audit, registrarPrecio, registrarMovimientoStock, proximoNumeroVenta, totalVentasPeriodo, generarCodigoRecuperacion, esEmailValido };

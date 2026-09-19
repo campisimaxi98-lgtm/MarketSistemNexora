@@ -2,7 +2,7 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
 
-const DATA_DIR = process.env.MINIMARKET_DATA || path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.MINIMARKET_DATA || (process.env.APPDATA ? path.join(process.env.APPDATA, 'MarketSistemNexora', 'datos') : path.join(__dirname, '..', 'data'));
 const DB_PATH = path.join(DATA_DIR, 'minimarket.db');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 
@@ -28,7 +28,10 @@ CREATE TABLE IF NOT EXISTS productos (
   codigo_qr TEXT,
   codigo_interno TEXT,
   nombre TEXT NOT NULL,
+  marca TEXT,
+  descripcion TEXT,
   id_categoria INTEGER REFERENCES categorias(id) ON DELETE SET NULL,
+  id_proveedor INTEGER REFERENCES proveedores(id) ON DELETE SET NULL,
   precio_costo REAL NOT NULL DEFAULT 0,
   precio_venta REAL NOT NULL DEFAULT 0,
   stock REAL NOT NULL DEFAULT 0,
@@ -39,7 +42,6 @@ CREATE TABLE IF NOT EXISTS productos (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_productos_cb ON productos(codigo_barras) WHERE codigo_barras IS NOT NULL AND codigo_barras <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS ux_productos_ci ON productos(codigo_interno) WHERE codigo_interno IS NOT NULL AND codigo_interno <> '';
-CREATE INDEX IF NOT EXISTS ix_productos_qr ON productos(codigo_qr);
 CREATE INDEX IF NOT EXISTS ix_productos_nombre ON productos(nombre COLLATE NOCASE);
 
 CREATE TABLE IF NOT EXISTS precios_historial (
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS detalle_ventas (
   total REAL NOT NULL,
   ganancia REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_detventa_venta ON detalle_ventas(id_venta);
 
 CREATE TABLE IF NOT EXISTS metodos_pago (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +92,7 @@ CREATE TABLE IF NOT EXISTS pagos (
   id_metodo_pago INTEGER NOT NULL REFERENCES metodos_pago(id),
   monto REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_pagos_venta ON pagos(id_venta);
 
 CREATE TABLE IF NOT EXISTS movimientos_stock (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,12 +134,16 @@ CREATE TABLE IF NOT EXISTS movimientos_caja (
   creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS ix_movcaja_fecha ON movimientos_caja(creado_en);
+CREATE INDEX IF NOT EXISTS ix_movcaja_caja ON movimientos_caja(id_caja);
+CREATE INDEX IF NOT EXISTS ix_movcaja_venta ON movimientos_caja(id_venta);
 
 CREATE TABLE IF NOT EXISTS usuarios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
   usuario TEXT NOT NULL UNIQUE,
+  email TEXT,
   password_hash TEXT NOT NULL,
+  recuperacion_hash TEXT,
   rol TEXT NOT NULL DEFAULT 'CAJERO',
   esta_activo INTEGER NOT NULL DEFAULT 1,
   creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
@@ -156,6 +164,43 @@ CREATE TABLE IF NOT EXISTS auditoria (
   creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS ix_auditoria_fecha ON auditoria(creado_en);
+
+CREATE TABLE IF NOT EXISTS proveedores (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE,
+  telefono TEXT,
+  email TEXT,
+  direccion TEXT,
+  cuit TEXT,
+  esta_activo INTEGER NOT NULL DEFAULT 1,
+  creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  actualizado_en TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS compras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  numero TEXT NOT NULL UNIQUE,
+  id_proveedor INTEGER REFERENCES proveedores(id) ON DELETE SET NULL,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  total REAL NOT NULL DEFAULT 0,
+  estado TEXT NOT NULL DEFAULT 'COMPLETADA',
+  id_usuario INTEGER,
+  creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  actualizado_en TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS ix_compras_fecha ON compras(fecha);
+
+CREATE TABLE IF NOT EXISTS detalle_compras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id_compra INTEGER NOT NULL REFERENCES compras(id) ON DELETE CASCADE,
+  id_producto INTEGER REFERENCES productos(id) ON DELETE SET NULL,
+  nombre TEXT NOT NULL,
+  codigo TEXT,
+  cantidad REAL NOT NULL,
+  costo_unitario REAL NOT NULL,
+  total REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_detcompra_compra ON detalle_compras(id_compra);
 `;
 
 function seed() {
@@ -194,10 +239,35 @@ function seed() {
   for (const [k, v] of Object.entries(defs)) st.run(k, v);
 }
 
+function migrar(db) {
+  const colExiste = (tabla, col) => db.prepare(`PRAGMA table_info(${tabla})`).all().some((r) => r.name === col);
+  const addCol = (tabla, col, def) => {
+    if (!colExiste(tabla, col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${def}`);
+  };
+
+  addCol('productos', 'marca', 'TEXT');
+  addCol('productos', 'descripcion', 'TEXT');
+  addCol('productos', 'id_proveedor', 'INTEGER REFERENCES proveedores(id) ON DELETE SET NULL');
+  addCol('usuarios', 'email', 'TEXT');
+  addCol('usuarios', 'recuperacion_hash', 'TEXT');
+
+  db.exec('DROP INDEX IF EXISTS ix_productos_qr;');
+
+  const duplicadosQr = db.prepare(
+    `SELECT MIN(id) AS mid, codigo_qr FROM productos
+     WHERE codigo_qr IS NOT NULL AND codigo_qr <> ''
+     GROUP BY codigo_qr HAVING COUNT(*) > 1`
+  ).all();
+  const limpiarQr = db.prepare('UPDATE productos SET codigo_qr = NULL WHERE codigo_qr = ? AND id <> ?');
+  for (const d of duplicadosQr) limpiarQr.run(d.codigo_qr, d.mid);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_productos_qr ON productos(codigo_qr) WHERE codigo_qr IS NOT NULL AND codigo_qr <> '';`);
+}
+
 function openDB() {
   if (db) return db;
   db = new DatabaseSync(DB_PATH);
   db.exec(SCHEMA);
+  migrar(db);
   seed();
   return db;
 }

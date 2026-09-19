@@ -41,7 +41,7 @@ if (!gotLock) {
       minWidth: 1024,
       minHeight: 640,
       title: 'MarketSistemNexora',
-      backgroundColor: '#1f2430',
+      backgroundColor: '#0a1020',
       autoHideMenuBar: true,
       show: false,
       webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false }

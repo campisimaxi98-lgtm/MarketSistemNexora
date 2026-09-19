@@ -162,6 +162,18 @@
   function teclaScanner(e) {
     var t = document.activeElement;
     if (t && t.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+    var enConfirmacion = !document.getElementById('pos-buscar');
+    if (enConfirmacion) {
+      if (/^[0-9A-Za-z#\-]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        state.teclado.buf += e.key;
+      }
+      if (e.key === 'Enter' || state.teclado.buf.length >= 3) {
+        state.teclado.buf = '';
+        clearTimeout(state.teclado.t);
+        App.routeChange();
+      }
+      return;
+    }
     if (e.key === 'Enter') {
       var b = state.teclado.buf;
       state.teclado.buf = '';

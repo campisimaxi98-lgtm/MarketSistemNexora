@@ -1,21 +1,48 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { getDB } = require('../db');
-const { audit } = require('../helpers');
-const { handle } = require('../middleware');
+const { audit, generarCodigoRecuperacion, esEmailValido } = require('../helpers');
+const { handle, requireAuth, requireAdmin } = require('../middleware');
 
 const router = express.Router();
 
-router.post('/login', handle((req, res) => {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function usuarioPublico(u) {
+  return { id: u.id, nombre: u.nombre, usuario: u.usuario, email: u.email || '', rol: u.rol };
+}
+
+function buscarPorUsuarioOEmail(ident) {
+  const db = getDB();
+  const val = String(ident || '').trim();
+  if (val.includes('@')) {
+    const porEmail = db.prepare('SELECT * FROM usuarios WHERE lower(email) = lower(?)').get(val);
+    if (porEmail) return porEmail;
+  }
+  return db.prepare('SELECT * FROM usuarios WHERE usuario = ?').get(val);
+}
+
+function emailEnUso(email, excluirId) {
+  if (!email) return false;
+  const db = getDB();
+  const row = db.prepare("SELECT 1 FROM usuarios WHERE lower(email) = lower(?) AND email IS NOT NULL AND email <> '' AND id <> ?")
+    .get(email.trim(), excluirId || 0);
+  return !!row;
+}
+
+router.post('/login', (req, res, next) => {
   const { usuario, password } = req.body || {};
   if (!usuario || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
-  const user = getDB().prepare('SELECT * FROM usuarios WHERE usuario = ?').get(String(usuario).trim());
+  const user = buscarPorUsuarioOEmail(String(usuario));
   if (!user || user.esta_activo !== 1) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-  if (!bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-  req.session.user = { id: user.id, nombre: user.nombre, usuario: user.usuario, rol: user.rol };
-  audit(user, 'LOGIN', 'Inicio de sesión');
-  res.json({ user: req.session.user });
-}));
+  if (!bcrypt.compareSync(String(password), user.password_hash)) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+  req.session.regenerate((err) => {
+    if (err) return next(err);
+    req.session.user = usuarioPublico(user);
+    audit(user, 'LOGIN', 'Inicio de sesión');
+    res.json({ user: req.session.user });
+  });
+});
 
 router.post('/logout', (req, res) => {
   if (req.session && req.session.user) audit(req.session.user, 'LOGOUT', 'Cierre de sesión');
@@ -47,12 +74,29 @@ router.get('/registro-info', handle((req, res) => {
   res.json({ hay_dueno: hayDueno, primer_usuario: total === 0 });
 }));
 
-router.post('/registro', handle((req, res) => {
-  const { nombre, usuario, password, rol } = req.body || {};
-  if (!nombre || !usuario || !password) return res.status(400).json({ error: 'Nombre, usuario y contraseña son obligatorios' });
-  if (String(password).length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' });
+function crearUsuario(datos) {
+  const { nombre, usuario, password, rol, email } = datos;
+  if (!nombre || !usuario || !password) return { error: 'Nombre, usuario y contraseña son obligatorios' };
+  if (String(password).length < 4) return { error: 'La contraseña debe tener al menos 4 caracteres' };
   const uA = String(usuario).trim();
-  if (uA.length < 3) return res.status(400).json({ error: 'El usuario debe tener al menos 3 caracteres' });
+  if (uA.length < 3) return { error: 'El usuario debe tener al menos 3 caracteres' };
+  if (email !== undefined && email !== null && String(email).trim() !== '') {
+    if (!EMAIL_RE.test(String(email).trim())) return { error: 'El email no es válido' };
+  }
+  const db = getDB();
+  if (db.prepare('SELECT 1 FROM usuarios WHERE usuario = ?').get(uA)) return { error: 'Ese usuario ya existe' };
+  if (emailEnUso(email)) return { error: 'Ese email ya está en uso por otro usuario' };
+  const codigo = generarCodigoRecuperacion();
+  const hash = bcrypt.hashSync(String(password), 10);
+  const recuHash = bcrypt.hashSync(codigo, 10);
+  const emailFinal = email !== undefined && email !== null ? String(email).trim() : null;
+  const info = db.prepare('INSERT INTO usuarios (nombre, usuario, email, password_hash, recuperacion_hash, rol) VALUES (?,?,?,?,?,?)')
+    .run(String(nombre).trim(), uA, emailFinal || null, hash, recuHash, rol);
+  return { id: Number(info.lastInsertRowid), nombre: String(nombre).trim(), usuario: uA, email: emailFinal || '', rol, codigo };
+}
+
+router.post('/registro', handle((req, res) => {
+  const { nombre, usuario, password, rol, email } = req.body || {};
   const db = getDB();
   const hayDueno = db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'ADMIN'").get().c > 0;
   let rolFinal;
@@ -63,54 +107,80 @@ router.post('/registro', handle((req, res) => {
   } else {
     rolFinal = 'CAJERO';
   }
-  if (db.prepare('SELECT 1 FROM usuarios WHERE usuario = ?').get(uA)) {
-    return res.status(400).json({ error: 'Ese usuario ya existe' });
-  }
-  const hash = bcrypt.hashSync(String(password), 10);
-  const info = db.prepare('INSERT INTO usuarios (nombre, usuario, password_hash, rol) VALUES (?,?,?,?)')
-    .run(String(nombre).trim(), uA, hash, rolFinal);
-  const user = { id: Number(info.lastInsertRowid), nombre: String(nombre).trim(), usuario: uA, rol: rolFinal };
-  req.session.user = user;
-  audit(user, 'REGISTRO', 'Cuenta creada como ' + (rolFinal === 'ADMIN' ? 'dueño' : 'empleado'));
-  res.json({ ok: true, user });
+  const creado = crearUsuario({ nombre, usuario, password, rol: rolFinal, email });
+  if (creado.error) return res.status(400).json({ error: creado.error });
+  const user = { id: creado.id, nombre: creado.nombre, usuario: creado.usuario, email: creado.email, rol: creado.rol };
+  req.session.regenerate((err) => {
+    if (err) return next(err);
+    req.session.user = user;
+    audit(user, 'REGISTRO', 'Cuenta creada como ' + (rolFinal === 'ADMIN' ? 'dueño' : 'empleado'));
+    res.json({ ok: true, user, codigo_recuperacion: creado.codigo });
+  });
 }));
 
-router.post('/usuarios', handle((req, res) => {
-  if (!req.session.user || req.session.user.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo administrador' });
-  const { nombre, usuario, password, rol } = req.body || {};
-  if (!nombre || !usuario || !password) return res.status(400).json({ error: 'Nombre, usuario y contraseña son obligatorios' });
+router.post('/recuperar', handle((req, res) => {
+  const { usuario, codigo, password } = req.body || {};
+  if (!usuario || !codigo || !password) return res.status(400).json({ error: 'Usuario o email, código y nueva contraseña son obligatorios' });
+  if (String(password).length < 4) return res.status(400).json({ error: 'La contraseña nueva debe tener al menos 4 caracteres' });
+  const user = buscarPorUsuarioOEmail(String(usuario));
+  if (!user || !user.recuperacion_hash) return res.status(400).json({ error: 'No se encontró una cuenta con ese usuario o email' });
+  if (!bcrypt.compareSync(String(codigo).trim().toUpperCase(), user.recuperacion_hash)) {
+    return res.status(400).json({ error: 'El código de recuperación no es válido' });
+  }
+  const nuevoCodigo = generarCodigoRecuperacion();
+  const hash = bcrypt.hashSync(String(password), 10);
+  const recuHash = bcrypt.hashSync(nuevoCodigo, 10);
+  getDB().prepare(`UPDATE usuarios SET password_hash = ?, recuperacion_hash = ?, actualizado_en = datetime('now','localtime') WHERE id = ?`)
+    .run(hash, recuHash, user.id);
+  audit(user, 'RECUPERAR_PASSWORD', 'Recuperó su contraseña con código');
+  res.json({ ok: true, codigo_recuperacion: nuevoCodigo });
+}));
+
+router.post('/usuarios', requireAuth, requireAdmin, handle((req, res) => {
+  const { nombre, usuario, password, rol, email } = req.body || {};
   if (!['ADMIN', 'CAJERO'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
-  const db = getDB();
-  if (db.prepare('SELECT 1 FROM usuarios WHERE usuario = ?').get(String(usuario).trim())) {
-    return res.status(400).json({ error: 'El usuario ya existe' });
-  }
-  const hash = bcrypt.hashSync(String(password), 10);
-  db.prepare('INSERT INTO usuarios (nombre, usuario, password_hash, rol) VALUES (?,?,?,?)')
-    .run(nombre, String(usuario).trim(), hash, rol);
+  const creado = crearUsuario({ nombre, usuario, password, rol, email });
+  if (creado.error) return res.status(400).json({ error: creado.error });
   audit(req.session.user, 'CREAR_USUARIO', usuario);
-  res.json({ ok: true });
+  res.json({ ok: true, codigo_recuperacion: creado.codigo });
 }));
 
-router.get('/usuarios', handle((req, res) => {
-  if (!req.session.user || req.session.user.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo administrador' });
-  const rows = getDB().prepare('SELECT id, nombre, usuario, rol, esta_activo, creado_en FROM usuarios ORDER BY id').all();
-  res.json(rows);
+router.get('/usuarios', requireAuth, requireAdmin, handle((req, res) => {
+  const rows = getDB().prepare('SELECT id, nombre, usuario, email, rol, esta_activo, creado_en FROM usuarios ORDER BY id').all();
+  res.json(rows.map((u) => ({ ...u, email: u.email || '' })));
 }));
 
-router.put('/usuarios/:id', handle((req, res) => {
-  if (!req.session.user || req.session.user.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo administrador' });
+router.put('/usuarios/:id', requireAuth, requireAdmin, handle((req, res) => {
   const id = Number(req.params.id);
   const db = getDB();
   const exists = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id);
   if (!exists) return res.status(404).json({ error: 'Usuario no encontrado' });
-  const { nombre, rol, esta_activo, password } = req.body || {};
-  db.prepare(`UPDATE usuarios SET nombre = ?, rol = ?, esta_activo = ?,
-    password_hash = CASE WHEN ? IS NULL OR ? = '' THEN password_hash ELSE ? END,
+  const { nombre, rol, esta_activo, password, email } = req.body || {};
+  if (password !== undefined && password !== null && String(password) !== '' && String(password).length < 4) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' });
+  }
+  if (email !== undefined && String(email).trim() !== '' && !EMAIL_RE.test(String(email).trim())) {
+    return res.status(400).json({ error: 'El email no es válido' });
+  }
+  if (emailEnUso(email, id)) return res.status(400).json({ error: 'Ese email ya está en uso por otro usuario' });
+
+  const nuevoNombre = nombre !== undefined ? String(nombre) : exists.nombre;
+  const nuevoRol = rol !== undefined ? rol : exists.rol;
+  const nuevoActivo = esta_activo === undefined ? exists.esta_activo : (esta_activo ? 1 : 0);
+  const emailFinal = email !== undefined ? (String(email).trim() || null) : exists.email;
+  let nuevoPassHash = exists.password_hash;
+  let codigoRotado = null;
+  if (password !== undefined && password !== null && String(password) !== '') {
+    nuevoPassHash = bcrypt.hashSync(String(password), 10);
+    const nuevoCodigo = generarCodigoRecuperacion();
+    db.prepare('UPDATE usuarios SET recuperacion_hash = ? WHERE id = ?').run(bcrypt.hashSync(nuevoCodigo, 10), id);
+    codigoRotado = nuevoCodigo;
+  }
+  db.prepare(`UPDATE usuarios SET nombre = ?, email = ?, rol = ?, esta_activo = ?, password_hash = ?,
     actualizado_en = datetime('now','localtime') WHERE id = ?`)
-    .run(nombre || exists.nombre, rol || exists.rol, esta_activo === undefined ? exists.esta_activo : (esta_activo ? 1 : 0),
-      password, password, password ? bcrypt.hashSync(String(password), 10) : null, id);
+    .run(nuevoNombre, emailFinal, nuevoRol, nuevoActivo, nuevoPassHash, id);
   audit(req.session.user, 'EDITAR_USUARIO', exists.usuario);
-  res.json({ ok: true });
+  res.json({ ok: true, codigo_recuperacion: codigoRotado });
 }));
 
 module.exports = router;

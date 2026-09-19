@@ -1,8 +1,25 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const { openDB } = require('./src/db');
+const fs = require('fs');
+const crypto = require('node:crypto');
+const { openDB, DATA_DIR } = require('./src/db');
 const { programarBackupAutomatico } = require('./src/routes/backup');
+
+function conseguirSecreto() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const archivo = path.join(DATA_DIR, 'session.secret');
+  try {
+    const actual = fs.readFileSync(archivo, 'utf8').trim();
+    if (actual) return actual;
+  } catch (e) {}
+  const secreto = crypto.randomBytes(48).toString('hex');
+  try {
+    fs.mkdirSync(path.dirname(archivo), { recursive: true });
+    fs.writeFileSync(archivo, secreto, { mode: 0o600 });
+  } catch (e) {}
+  return secreto;
+}
 
 function createApp() {
   const app = express();
@@ -11,7 +28,7 @@ function createApp() {
   app.use(express.urlencoded({ extended: false }));
 
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'marketsistemnexora-secreto-local',
+    secret: conseguirSecreto(),
     resave: false,
     saveUninitialized: false,
     cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 15, sameSite: 'lax' }

@@ -6,7 +6,8 @@ const { requireAuth, requireAdmin, handle } = require('../middleware');
 const router = express.Router();
 
 const PRODUCTO_COLS = `p.id, p.codigo_barras, p.codigo_qr, p.codigo_interno, p.nombre,
-  p.id_categoria, p.precio_costo, p.precio_venta, p.stock, p.stock_minimo, p.esta_activo,
+  p.marca, p.descripcion, p.id_categoria, p.id_proveedor, p.precio_costo, p.precio_venta,
+  p.stock, p.stock_minimo, p.esta_activo,
   p.creado_en, p.actualizado_en, c.nombre AS categoria,
   ROUND(p.precio_venta - p.precio_costo, 2) AS ganancia`;
 
@@ -17,7 +18,10 @@ function mapProducto(p) {
     codigo_qr: p.codigo_qr,
     codigo_interno: p.codigo_interno,
     nombre: p.nombre,
+    marca: p.marca || '',
+    descripcion: p.descripcion || '',
     id_categoria: p.id_categoria,
+    id_proveedor: p.id_proveedor,
     categoria: p.categoria || 'Sin categoría',
     nombre_categoria: p.categoria || 'Sin categoría',
     precio_costo: p.precio_costo,
@@ -35,7 +39,7 @@ function mapProducto(p) {
 router.get('/', requireAuth, handle((req, res) => {
   const db = getDB();
   const { search = '', categoria = '', solo_bajo = '', incluir_inactivos = '0', page = 1, limit = 50 } = req.query;
-  const where = ['p.esta_activo = ' + (incluir_inactivos === '1' ? '0 OR p.esta_activo = 1' : '1')];
+  const where = [incluir_inactivos === '1' ? '(p.esta_activo = 0 OR p.esta_activo = 1)' : 'p.esta_activo = 1'];
   const params = {};
   if (search) {
     const s = String(search).trim();
@@ -79,7 +83,7 @@ router.post('/buscar', requireAuth, handle((req, res) => {
 
 function validarDatos(body) {
   const errs = [];
-  let { codigo_barras, codigo_qr, codigo_interno, nombre, id_categoria, precio_costo, precio_venta, stock, stock_minimo } = body;
+  let { codigo_barras, codigo_qr, codigo_interno, nombre, marca, descripcion, id_categoria, id_proveedor, precio_costo, precio_venta, stock, stock_minimo } = body;
   nombre = String(nombre || '').trim();
   if (!nombre) errs.push('El nombre del producto es obligatorio');
   precio_costo = precio_costo === '' || precio_costo === undefined || precio_costo === null ? 0 : Number(precio_costo);
@@ -88,11 +92,17 @@ function validarDatos(body) {
   if (!(precio_costo >= 0) || isNaN(precio_costo)) errs.push('Precio de costo inválido');
   stock = stock === '' || stock === undefined || stock === null ? 0 : Number(stock);
   stock_minimo = stock_minimo === '' || stock_minimo === undefined || stock_minimo === null ? 0 : Number(stock_minimo);
+  if (isNaN(stock) || stock < 0) errs.push('Stock inválido');
+  if (isNaN(stock_minimo) || stock_minimo < 0) errs.push('Stock mínimo inválido');
   return { errs, data: {
     codigo_barras: String(codigo_barras || '').trim(),
     codigo_qr: String(codigo_qr || '').trim(),
     codigo_interno: String(codigo_interno || '').trim(),
-    nombre, id_categoria: id_categoria ? Number(id_categoria) : null,
+    nombre,
+    marca: String(marca || '').trim(),
+    descripcion: String(descripcion || '').trim(),
+    id_categoria: id_categoria ? Number(id_categoria) : null,
+    id_proveedor: id_proveedor ? Number(id_proveedor) : null,
     precio_costo: round2(precio_costo), precio_venta: round2(precio_venta),
     stock: Number(stock), stock_minimo: Number(stock_minimo)
   } };
@@ -122,12 +132,20 @@ router.post('/', requireAuth, handle(async (req, res) => {
   if (dup) return res.status(400).json({ error: dup });
   const db = getDB();
   if (!data.codigo_barras && !data.codigo_interno && !data.codigo_qr) {
-    data.codigo_interno = 'PRODUCTO-' + String(Date.now()).slice(-6);
+    const base = 'PRODUCTO-' + String(Date.now()).slice(-4);
+    for (let intento = 0; intento < 20; intento++) {
+      const candidato = base + '-' + Math.floor(Math.random() * 900 + 100);
+      if (!db.prepare('SELECT 1 FROM productos WHERE codigo_interno = ?').get(candidato)) {
+        data.codigo_interno = candidato;
+        break;
+      }
+    }
   }
-  const info = db.prepare(`INSERT INTO productos (codigo_barras, codigo_qr, codigo_interno, nombre, id_categoria, precio_costo, precio_venta, stock, stock_minimo)
-    VALUES (?,?,?,?,?,?,?,?,?)`)
+  const info = db.prepare(`INSERT INTO productos (codigo_barras, codigo_qr, codigo_interno, nombre, marca, descripcion, id_categoria, id_proveedor, precio_costo, precio_venta, stock, stock_minimo)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(data.codigo_barras || null, data.codigo_qr || null, data.codigo_interno || null,
-      data.nombre, data.id_categoria, data.precio_costo, data.precio_venta, data.stock, data.stock_minimo);
+      data.nombre, data.marca || null, data.descripcion || null, data.id_categoria, data.id_proveedor,
+      data.precio_costo, data.precio_venta, data.stock, data.stock_minimo);
   const id = Number(info.lastInsertRowid);
   registrarPrecio(id, data.precio_costo, data.precio_venta, req.session.user);
   if (data.stock > 0) {
@@ -153,12 +171,21 @@ router.put('/:id', requireAuth, handle(async (req, res) => {
   const actual = db.prepare('SELECT * FROM productos WHERE id = ?').get(id);
   if (!actual) return res.status(404).json({ error: 'Producto no encontrado' });
   const body = req.body || {};
+
+  const tocaSensible = body.precio_venta !== undefined || body.precio_costo !== undefined || body.stock !== undefined;
+  if (tocaSensible && req.session.user.rol !== 'ADMIN') {
+    return res.status(403).json({ error: 'Solo el dueño puede modificar precios o stock' });
+  }
+
   const cambios = {};
   if (body.nombre !== undefined) cambios.nombre = String(body.nombre).trim();
   if (body.codigo_barras !== undefined) cambios.codigo_barras = String(body.codigo_barras).trim();
   if (body.codigo_qr !== undefined) cambios.codigo_qr = String(body.codigo_qr).trim();
   if (body.codigo_interno !== undefined) cambios.codigo_interno = String(body.codigo_interno).trim();
+  if (body.marca !== undefined) cambios.marca = String(body.marca).trim();
+  if (body.descripcion !== undefined) cambios.descripcion = String(body.descripcion).trim();
   if (body.id_categoria !== undefined) cambios.id_categoria = body.id_categoria ? Number(body.id_categoria) : null;
+  if (body.id_proveedor !== undefined) cambios.id_proveedor = body.id_proveedor ? Number(body.id_proveedor) : null;
   let precioCosto = body.precio_costo !== undefined ? round2(Number(body.precio_costo)) : actual.precio_costo;
   let precioVenta = body.precio_venta !== undefined ? round2(Number(body.precio_venta)) : actual.precio_venta;
   if (body.precio_venta !== undefined && !(precioVenta >= 0)) return res.status(400).json({ error: 'Precio de venta inválido' });
@@ -167,9 +194,19 @@ router.put('/:id', requireAuth, handle(async (req, res) => {
     cambios.precio_costo = precioCosto;
     cambios.precio_venta = precioVenta;
   }
-  if (body.stock !== undefined) cambios.stock = Number(body.stock);
-  if (body.stock_minimo !== undefined) cambios.stock_minimo = Number(body.stock_minimo);
+  let nuevoStock = null;
+  if (body.stock !== undefined) {
+    nuevoStock = Number(body.stock);
+    if (!(nuevoStock >= 0) || isNaN(nuevoStock)) return res.status(400).json({ error: 'Stock inválido' });
+    cambios.stock = nuevoStock;
+  }
+  if (body.stock_minimo !== undefined) {
+    const sm = Number(body.stock_minimo);
+    if (!(sm >= 0) || isNaN(sm)) return res.status(400).json({ error: 'Stock mínimo inválido' });
+    cambios.stock_minimo = sm;
+  }
   if (body.esta_activo !== undefined) cambios.esta_activo = body.esta_activo ? 1 : 0;
+  if (!Object.keys(cambios).length) return res.status(400).json({ error: 'No hay cambios para guardar' });
 
   const data = { ...actual, ...cambios };
   const dup = await chequearDuplicados(data, id);
@@ -185,6 +222,12 @@ router.put('/:id', requireAuth, handle(async (req, res) => {
     registrarPrecio(id, precioCosto, precioVenta, req.session.user);
     audit(req.session.user, 'ACT_PRECIO', actual.nombre + ' PV: ' + actual.precio_venta + ' -> ' + precioVenta +
       (body.precio_costo !== undefined ? ' | PC: ' + actual.precio_costo + ' -> ' + precioCosto : ''));
+  }
+  if (nuevoStock !== null && nuevoStock !== actual.stock) {
+    const delta = round2(nuevoStock - actual.stock);
+    db.prepare(`INSERT INTO movimientos_stock (id_producto, tipo, cantidad, stock_anterior, stock_nuevo, motivo, id_usuario)
+      VALUES (?,'AJUSTE',?,?,?,'Ajuste directo',?)`).run(id, delta, actual.stock, nuevoStock, req.session.user.id);
+    audit(req.session.user, 'AJUSTE_STOCK', actual.nombre + ': ' + actual.stock + ' -> ' + nuevoStock);
   }
   audit(req.session.user, 'EDITAR_PRODUCTO', actual.nombre);
   res.json({ ok: true });

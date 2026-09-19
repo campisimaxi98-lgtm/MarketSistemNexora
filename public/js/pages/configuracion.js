@@ -38,13 +38,14 @@
       if (!tbody) return;
       tbody.innerHTML = rows.map(function (u) {
         return '<tr><td>' + U.esc(u.nombre) + '</td><td>' + U.esc(u.usuario) + '</td>' +
+          '<td>' + U.esc(u.email || '') + '</td>' +
           '<td>' + (u.rol === 'ADMIN' ? '<span class="badge badge-info">Dueño</span>' : '<span class="badge badge-muted">Empleado</span>') + '</td>' +
           '<td>' + (u.esta_activo ? '<span class="badge badge-ok">Activo</span>' : '<span class="badge badge-muted">Inactivo</span>') + '</td>' +
           '<td><button class="btn btn-sm" data-us="edit" data-id="' + u.id + '">Editar</button> <button class="btn btn-sm" data-us="toggle" data-id="' + u.id + '" data-act="' + u.esta_activo + '">' + (u.esta_activo ? 'Desactivar' : 'Activar') + '</button></td></tr>';
-      }).join('') || U.tableEmpty(5, 'Sin usuarios');
+      }).join('') || U.tableEmpty(6, 'Sin usuarios');
     }).catch(function (e) {
       var tbody = document.querySelector('#usuarios-body');
-      if (tbody) tbody.innerHTML = U.tableEmpty(5, e.message);
+      if (tbody) tbody.innerHTML = U.tableEmpty(6, e.message);
     });
   }
 
@@ -95,6 +96,7 @@
     var html =
       '<label>Nombre<input id="us-nombre" value="' + U.esc(u.nombre || '') + '"></label>' +
       '<label>Usuario<input id="us-usuario" value="' + U.esc(u.usuario || '') + '" ' + (esNuevo ? '' : 'disabled') + '></label>' +
+      '<label>Email <small>(para recuperar la contraseña)</small><input id="us-email" type="email" value="' + U.esc(u.email || '') + '"></label>' +
       '<div class="form-row">' +
       '<label>Rol<select id="us-rol"><option value="CAJERO"' + (u.rol === 'CAJERO' ? ' selected' : '') + '>Empleado</option><option value="ADMIN"' + (u.rol === 'ADMIN' ? ' selected' : '') + '>Dueño (administrador)</option></select></label>' +
       '<label>Contraseña' + (esNuevo ? '' : ' <small>(dejar vacío para no cambiar)</small>') + '<input id="us-pass" type="password"></label>' +
@@ -107,13 +109,23 @@
         var body = {
           nombre: m.el.querySelector('#us-nombre').value,
           usuario: m.el.querySelector('#us-usuario').value,
+          email: m.el.querySelector('#us-email').value,
           rol: m.el.querySelector('#us-rol').value,
           password: m.el.querySelector('#us-pass').value
         };
         if (!esNuevo) delete body.usuario;
         var req = esNuevo ? U.api('POST', '/auth/usuarios', body) : U.api('PUT', '/auth/usuarios/' + u.id, body);
-        req.then(function () {
-          U.toast(esNuevo ? 'Usuario creado' : 'Usuario actualizado', 'ok');
+        req.then(function (r) {
+          if (r.codigo_recuperacion) {
+            U.modal({
+              titulo: esNuevo ? 'Código de recuperación del usuario' : 'Código actualizado',
+              okText: 'Entendido',
+              html: '<p>Guardá este código para recuperar la contraseña de <strong>' + U.esc(body.nombre) + '</strong>:</p>' +
+                '<div class="codigo-recu">' + U.esc(r.codigo_recuperacion) + '</div>'
+            });
+          } else {
+            U.toast(esNuevo ? 'Usuario creado' : 'Usuario actualizado', 'ok');
+          }
           m.close();
           cargarUsuarios();
         }).catch(function (e) { U.toast(e.message, 'error'); return false; });
@@ -195,7 +207,7 @@
         '<div class="card mt"><h3>Categorías</h3><div id="cats-nuevas" class="flex flex-wrap"></div></div>' +
         '<div class="card mt"><h3>Usuarios</h3>' +
         '<div class="flex between mb"><span class="muted">Administradores y cajeros</span><button class="btn btn-primary" id="btn-nuevo-us">+ Nuevo usuario</button></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody id="usuarios-body"><tr><td colspan="5" class="center muted">Cargando…</td></tr></tbody></table></div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Email</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody id="usuarios-body"><tr><td colspan="6" class="center muted">Cargando…</td></tr></tbody></table></div>' +
         '</div>';
     },
 

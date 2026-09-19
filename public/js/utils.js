@@ -235,7 +235,7 @@
       '<polyline points="' + pts + '" fill="none" stroke="#2563eb" stroke-width="2.5"/>' +
       items.map(function (i, k) {
         return '<circle cx="' + x(k) + '" cy="' + y(i.value) + '" r="3.5" fill="#2563eb"/>' +
-          '<text x="' + x(k) + '" y="' + y(i.value) - 8 + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.fmtQty(i.value) + '</text>';
+          '<text x="' + x(k) + '" y="' + (y(i.value) - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.fmtQty(i.value) + '</text>';
       }).join('') +
       items.map(function (i, k) {
         return '<text x="' + x(k) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.esc(U.shortDia(i.label)) + '</text>';

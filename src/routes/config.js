@@ -18,15 +18,14 @@ router.put('/', requireAdmin, handle((req, res) => {
   for (const k of keys) {
     if (body[k] !== undefined) { setConfig(k, body[k]); cambios.push(k); }
   }
-  if (cambios.length && body.nombre_comercio !== undefined) {
-    audit(req.session.user, 'CONFIG', 'Cambió configuración del comercio');
-  }
   // métodos de pago
   if (Array.isArray(body.metodos_pago)) {
     const db = require('../db').getDB();
+    const upd = db.prepare('UPDATE metodos_pago SET nombre = COALESCE(?, nombre), activo = ? WHERE id = ?');
     body.metodos_pago.forEach((m) => {
-      if (m.id && m.nombre) {
-        db.prepare('UPDATE metodos_pago SET nombre = ?, activo = ? WHERE id = ?').run(m.nombre, m.activo ? 1 : 0, m.id);
+      if (m && m.id) {
+        upd.run(m.nombre !== undefined ? String(m.nombre).trim() : null, m.activo ? 1 : 0, Number(m.id));
+        cambios.push('metodo_pago_' + m.id);
       }
     });
   }
@@ -35,6 +34,9 @@ router.put('/', requireAdmin, handle((req, res) => {
     const db = require('../db').getDB();
     const st = db.prepare('INSERT OR IGNORE INTO categorias (nombre) VALUES (?)');
     body.categorias_nuevas.forEach((c) => { if (c && c.trim()) st.run(c.trim()); });
+  }
+  if (cambios.length) {
+    audit(req.session.user, 'CONFIG', 'Cambió la configuración');
   }
   res.json({ ok: true });
 }));

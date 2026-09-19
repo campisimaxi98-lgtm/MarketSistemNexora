@@ -12,7 +12,7 @@
           '<td class="num" style="color:var(--warn);font-weight:600">' + U.fmtQty(p.faltan) + '</td>' +
           '<td class="num">' + U.fmt(p.precio_venta) + '</td>' +
           '<td style="white-space:nowrap">' +
-          '<button class="btn btn-sm btn-ok" data-acc="entrada" data-id="' + p.id + '" data-nombre="' + U.esc(p.nombre) + '" data-cant="' + p.faltan + '">Reponer</button> ' +
+          '<button class="btn btn-sm btn-ok" data-acc="entrada" data-id="' + p.id + '" data-nombre="' + U.esc(p.nombre) + '" data-cant="' + p.faltan + '" data-stock="' + p.stock + '">Reponer</button> ' +
           '<button class="btn btn-sm" data-acc="ajuste" data-id="' + p.id + '" data-nombre="' + U.esc(p.nombre) + '" data-stock="' + p.stock + '">Ajustar</button>' +
           '</td></tr>';
       }).join('') || U.tableEmpty(7, 'No hay productos por reponer');
