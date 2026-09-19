@@ -67,8 +67,8 @@
     });
   }
 
-  App.page('tickets', {
-    title: 'Tickets y ventas',
+  var VENTAS_PAGE = {
+    title: 'Ventas / Historial',
 
     html: function () {
       return '<div class="toolbar">' +
@@ -104,5 +104,7 @@
       'click [data-acc="ver"]': function (e, t) { verVenta(Number(t.getAttribute('data-id'))); },
       'click [data-acc="anular"]': function (e, t) { anular(Number(t.getAttribute('data-id'))); }
     }
-  });
+  };
+  App.page('ventas', VENTAS_PAGE);
+  App.page('tickets', VENTAS_PAGE);
 })();

@@ -180,15 +180,16 @@
   };
 
   U.bindHooks = function (rootEl, hooks) {
-    if (!hooks || !hooks.events) return;
-    Object.keys(hooks.events).forEach(function (key) {
+    if (!hooks) return;
+    var map = hooks.events || hooks;
+    Object.keys(map).forEach(function (key) {
       var parts = key.trim().split(/\s+/);
       var evt = parts[0];
       var sel = parts.slice(1).join(' ');
       rootEl.addEventListener(evt, function (e) {
         var t = e.target;
         while (t && t !== rootEl) {
-          if (sel === '' || t.matches(sel)) { hooks.events[key](e, t); return; }
+          if (sel === '' || (t.matches && t.matches(sel))) { map[key](e, t); return; }
           t = t.parentElement;
         }
       });
@@ -204,38 +205,97 @@
     };
   };
 
+  U.chartEmpty = function (el, msg) {
+    el.innerHTML = '<div class="chart-empty">' + U.esc(msg || 'No hay suficientes datos para generar esta gráfica.') + '</div>';
+  };
+
   U.renderBarsHor = function (el, items) {
+    if (!items || !items.length) return U.chartEmpty(el);
     var max = 0;
     items.forEach(function (i) { if (i.value > max) max = i.value; });
-    if (!max) max = 1;
+    if (!max) return U.chartEmpty(el);
     var html = items.map(function (i) {
       var pct = Math.round((i.value / max) * 100);
       return '<div class="bar-row" style="margin-bottom:8px">' +
         '<div style="display:flex;justify-content:space-between;font-size:12px"><span>' + U.esc(i.label) + '</span><span class="muted">' + U.fmtQty(i.value) + '</span></div>' +
-        '<div style="background:#eff6ff;border-radius:6px;height:12px;margin-top:3px"><div class="bar" style="width:' + pct + '%;height:100%;background:' + (i.color || '#2563eb') + ';border-radius:6px"></div></div>' +
+        '<div class="bar-track"><div class="bar" style="width:' + pct + '%;background:' + (i.color || 'var(--accent)') + '"></div></div>' +
         '</div>';
     }).join('');
     el.innerHTML = html;
   };
 
+  U.renderBarsVert = function (el, items, opts) {
+    opts = opts || {};
+    if (!items || !items.length) return U.chartEmpty(el);
+    var max = 0;
+    items.forEach(function (i) { if (Number(i.value) > max) max = Number(i.value); });
+    if (!max) return U.chartEmpty(el);
+    var cols = items.map(function (i) {
+      var h = Math.max(3, Math.round((Number(i.value) / max) * 100));
+      return '<div class="bv-col">' +
+        '<div class="bv-bar" style="height:' + h + '%;background:' + (i.color || 'var(--accent)') + '"><span class="bv-val">' + U.fmtQty(i.value) + '</span></div>' +
+        '<div class="bv-label" title="' + U.esc(i.label) + '">' + U.esc(opts.short ? U.shortDia(i.label) : i.label) + '</div>' +
+        '</div>';
+    }).join('');
+    el.innerHTML = '<div class="bv-wrap">' + cols + '</div>' + (opts.legend ? '<div class="legend">' + opts.legend.map(function (l) { return '<span><i style="background:' + l.color + '"></i>' + U.esc(l.label) + '</span>'; }).join('') + '</div>' : '');
+  };
+
+  U.renderMultiLine = function (el, labels, series) {
+    if (!labels || !labels.length || !series || !series.length) return U.chartEmpty(el);
+    var w = 640, h = 190, padL = 46, padB = 26, padT = 12;
+    var max = 0, k;
+    series.forEach(function (s) { s._d = s.data.map(function (v) { return Number(v) || 0; }); s._d.forEach(function (v) { if (v > max) max = v; }); });
+    if (!max) return U.chartEmpty(el);
+    var n = Math.max(labels.length, 2);
+    var innerW = w - padL - 12, innerH = h - padT - padB;
+    var x = function (i) { return padL + (innerW * i) / (n - 1); };
+    var y = function (v) { return padT + innerH - (innerH * v) / max; };
+    var grid = '';
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (innerH * g) / 4;
+      grid += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (w - 12) + '" y2="' + gy + '" stroke="rgba(99,102,241,.08)" stroke-width="1"/>';
+    }
+    var lines = series.map(function (s, si) {
+      var pts = labels.map(function (_, i) { return x(i) + ',' + y(s._d[i]); }).join(' ');
+      var area = padL + ',' + y(0) + ' ' + pts + ' ' + x(n - 1) + ',' + y(0);
+      return '<polygon points="' + area + '" fill="' + s.color + '" opacity="0.07"/>' +
+        '<polyline points="' + pts + '" fill="none" stroke="' + s.color + '" stroke-width="2.5" stroke-linejoin="round"/>';
+    }).join('');
+    var legend = '<div class="legend">' + series.map(function (s) { return '<span><i style="background:' + s.color + '"></i>' + U.esc(s.name) + '</span>'; }).join('') + '</div>';
+    el.innerHTML =
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" class="chart" preserveAspectRatio="xMidYMid meet">' + grid + lines +
+      labels.map(function (l, i) {
+        return '<text x="' + x(i) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.esc(U.shortDia(l)) + '</text>';
+      }).join('') +
+      '</svg>' + legend;
+  };
+
   U.renderLine = function (el, items, opts) {
     opts = opts || {};
+    if (!items || !items.length) return U.chartEmpty(el);
     var w = 640, h = 180, padL = 44, padB = 26, padT = 12;
-    var max = 0;
-    items.forEach(function (i) { if (i.value > max) max = i.value; });
-    if (!max) max = 1;
+    var max = 0, c = opts.color || 'var(--accent)';
+    items.forEach(function (i) { if (Number(i.value) > max) max = Number(i.value); });
+    if (!max) return U.chartEmpty(el);
+    if (items.length === 1) items = items.concat([{ label: items[0].label, value: 0 }]);
     var n = Math.max(items.length, 2);
     var innerW = w - padL - 12, innerH = h - padT - padB;
     var x = function (i) { return padL + (innerW * i) / (n - 1); };
     var y = function (v) { return padT + innerH - (innerH * v) / max; };
-    var pts = items.map(function (i, k) { return x(k) + ',' + y(i.value); }).join(' ');
+    var grid = '';
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (innerH * g) / 4;
+      grid += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (w - 12) + '" y2="' + gy + '" stroke="rgba(99,102,241,.08)" stroke-width="1"/>';
+    }
+    var pts = items.map(function (i, k) { return x(k) + ',' + y(Number(i.value)); }).join(' ');
     var area = padL + ',' + y(0) + ' ' + pts + ' ' + x(n - 1) + ',' + y(0);
     var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" class="chart" preserveAspectRatio="xMidYMid meet">' +
-      '<polygon points="' + area + '" fill="#2563eb" opacity="0.10"/>' +
-      '<polyline points="' + pts + '" fill="none" stroke="#2563eb" stroke-width="2.5"/>' +
+      grid +
+      '<polygon points="' + area + '" fill="' + c + '" opacity="0.08"/>' +
+      '<polyline points="' + pts + '" fill="none" stroke="' + c + '" stroke-width="2.5" stroke-linejoin="round"/>' +
       items.map(function (i, k) {
-        return '<circle cx="' + x(k) + '" cy="' + y(i.value) + '" r="3.5" fill="#2563eb"/>' +
-          '<text x="' + x(k) + '" y="' + (y(i.value) - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.fmtQty(i.value) + '</text>';
+        return '<circle cx="' + x(k) + '" cy="' + y(Number(i.value)) + '" r="3.5" fill="' + c + '"/>' +
+          '<text x="' + x(k) + '" y="' + (y(Number(i.value)) - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.fmtQty(i.value) + '</text>';
       }).join('') +
       items.map(function (i, k) {
         return '<text x="' + x(k) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + U.esc(U.shortDia(i.label)) + '</text>';
@@ -245,16 +305,17 @@
   };
 
   U.shortDia = function (s) {
-    var d = new Date(s + 'T00:00:00');
-    if (isNaN(d)) return String(s).slice(0, 5);
-    return ['do', 'lu', 'ma', 'mi', 'ju', 'vi', 'sa'][d.getDay()];
+    var d = new Date(String(s).slice(0, 10) + 'T00:00:00');
+    if (isNaN(d.getTime())) return String(s).slice(0, 5);
+    return ['do', 'lu', 'ma', 'mi', 'ju', 'vi', 'sa'][d.getDay()] + ' ' + String(d.getDate()).padStart(2, '0');
   };
 
   U.renderDonut = function (el, items) {
+    if (!items || !items.length) return U.chartEmpty(el);
     var total = 0;
     items.forEach(function (i) { total += i.value; });
-    if (total <= 0) { el.innerHTML = '<div class="muted">Sin datos</div>'; return; }
-    var colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d'];
+    if (total <= 0) return U.chartEmpty(el);
+    var colors = ['#22d3ee', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#f472b6', '#2dd4bf'];
     var acc = 0;
     var stops = items.map(function (i, k) {
       var from = (acc / total) * 100;
@@ -262,11 +323,15 @@
       var to = (acc / total) * 100;
       return (i.color || colors[k % colors.length]) + ' ' + from + '% ' + to + '%';
     });
-    var inner = 62;
     var gradient = 'conic-gradient(' + stops.join(', ') + ')';
+    var legend = items.map(function (i, k) {
+      var pct = Math.round(((i.value || 0) / total) * 100);
+      return '<span><i style="background:' + (i.color || colors[k % colors.length]) + '"></i>' + U.esc(i.label) + ' · <strong>' + U.fmt(i.value) + '</strong> (' + pct + '%)</span>';
+    }).join('');
     el.innerHTML =
-      '<div style="position:relative;width:150px;height:150px;margin:0 auto;border-radius:50%;background:' + gradient + '">' +
-      '<div style="position:absolute;inset:22%;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px">' + U.fmt(total) + '</div></div>';
+      '<div class="donut" style="background:' + gradient + '">' +
+      '<div class="donut-inner">' + U.fmt(total) + '</div></div>' +
+      '<div class="legend">' + legend + '</div>';
   };
 
   U.tableEmpty = function (cols, msg) {

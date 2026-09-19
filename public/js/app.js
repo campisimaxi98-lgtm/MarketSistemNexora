@@ -44,6 +44,16 @@
         e.preventDefault();
         App.recuperar();
       });
+      document.addEventListener('click', function (e) {
+        var b = e.target && e.target.closest ? e.target.closest('.eye-btn') : null;
+        if (!b) return;
+        var input = document.getElementById(b.getAttribute('data-eye'));
+        if (!input) return;
+        var mostrar = input.type === 'password';
+        input.type = mostrar ? 'text' : 'password';
+        b.classList.toggle('on', mostrar);
+        b.setAttribute('aria-label', mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña');
+      });
       App.setFecha();
       App.check();
       window.addEventListener('hashchange', App.routeChange);
@@ -188,8 +198,10 @@
       document.getElementById('app-nombre').textContent = (App.config && App.config.nombre_comercio) ? App.config.nombre_comercio : 'MarketSistemNexora';
       var nav = document.getElementById('main-nav');
       if (user.rol !== 'ADMIN') {
-        var link = nav.querySelector('a[data-nav="config"]');
-        if (link) link.style.display = 'none';
+        ['config', 'importar'].forEach(function (nm) {
+          var link = nav.querySelector('a[data-nav="' + nm + '"]');
+          if (link) link.style.display = 'none';
+        });
       }
       App.routeChange();
     },
@@ -209,21 +221,40 @@
       try { await U.api('POST', '/auth/logout'); } catch (e) {}
       App.user = null;
       App.config = null;
+      document.getElementById('login-form').reset();
+      document.getElementById('login-password').type = 'password';
+      document.getElementById('login-error').hidden = true;
+      if (location.hash) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
       App.showLogin();
     },
 
     login: async function () {
       var err = document.getElementById('login-error');
       err.hidden = true;
+      var btn = document.getElementById('btn-login-submit');
+      var usuario = document.getElementById('login-usuario').value.trim();
+      var password = document.getElementById('login-password').value;
+      if (!usuario || !password) {
+        err.textContent = 'Ingresá tu usuario y tu contraseña.';
+        err.hidden = false;
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Ingresando…';
       try {
-        var r = await U.api('POST', '/auth/login', {
-          usuario: document.getElementById('login-usuario').value,
-          password: document.getElementById('login-password').value
-        });
+        var r = await U.api('POST', '/auth/login', { usuario: usuario, password: password });
+        if (location.hash) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+        document.getElementById('login-form').reset();
         await App.showApp(r.user);
       } catch (e) {
-        err.textContent = e.message;
+        err.textContent = 'Usuario o contraseña incorrectos. Probá de nuevo.';
         err.hidden = false;
+        var pas = document.getElementById('login-password');
+        pas.focus();
+        pas.select();
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingresar';
       }
     },
 

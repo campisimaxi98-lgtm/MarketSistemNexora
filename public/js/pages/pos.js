@@ -7,7 +7,8 @@
     state = {
       cart: [],
       metodos: [],
-      pagos: null,
+      metSel: null,
+      recibido: null,
       teclado: { buf: '', t: null },
       sugerencias: [],
       selSug: -1,
@@ -35,11 +36,16 @@
       });
     }
     reRenderCarrito();
+    reRenderPagos();
     focusBuscar();
   }
 
   function totalCarrito() {
-    return state.cart.reduce(function (a, i) { return a + i.precio_unitario * i.cantidad; }, 0);
+    return Math.round(state.cart.reduce(function (a, i) { return a + i.precio_unitario * i.cantidad; }, 0) * 100) / 100;
+  }
+
+  function recibidoActual() {
+    return state.recibido === null || isNaN(Number(state.recibido)) ? totalCarrito() : Number(state.recibido);
   }
 
   function reRenderCarrito() {
@@ -67,13 +73,19 @@
   }
 
   function actualizarPendiente() {
-    var total = Math.round(totalCarrito() * 100) / 100;
-    var suma = Math.round(state.pagos.reduce(function (a, p) { return a + Number(p.monto || 0); }, 0) * 100) / 100;
+    var total = totalCarrito();
+    var rec = recibidoActual();
     var pend = document.getElementById('pos-pendiente');
-    if (pend) pend.textContent = U.fmt(Math.max(0, Math.round((total - suma) * 100) / 100));
+    if (pend) pend.textContent = U.fmt(Math.max(0, Math.round((total - rec) * 100) / 100));
+    var vuelto = document.getElementById('pos-vuelto');
+    if (vuelto) {
+      vuelto.textContent = rec - total > 0.005 ? 'Vuelto: ' + U.fmt(Math.round((rec - total) * 100) / 100)
+        : (Math.abs(rec - total) <= 0.005 ? 'Pago exacto' : 'Falta: ' + U.fmt(Math.round((total - rec) * 100) / 100));
+      vuelto.classList.toggle('ok', rec - total > 0.005 || Math.abs(rec - total) <= 0.005);
+    }
     var btn = document.getElementById('btn-cobrar');
     if (btn) {
-      btn.disabled = state.cart.length === 0 || suma < total - 0.01;
+      btn.disabled = !(state.cart.length > 0 && rec + 0.005 >= total);
       btn.textContent = '💵 Cobrar ' + U.fmt(total);
     }
   }
@@ -81,29 +93,36 @@
   function reRenderPagos(force) {
     var host = document.getElementById('pos-pagos');
     if (!host) return;
-    if (!state.pagos || state.pagos.length === 0) {
-      state.pagos = [{ id_metodo_pago: 1, nombre: 'Efectivo', monto: totalCarrito() }];
+    if (!state.metodos.length) {
+      host.innerHTML = '<p class="muted">No hay métodos de pago activos.</p>';
+      return;
     }
-    var soloEfectivo = state.pagos.length === 1;
+    if (!state.metodos.some(function (m) { return m.id === state.metSel; })) {
+      state.metSel = (state.metodos.find(function (m) { return /efectiv/i.test(m.nombre); }) || state.metodos[0]).id;
+    }
+    var sel = state.metodos.find(function (m) { return m.id === state.metSel; });
+    var total = totalCarrito();
     host.innerHTML =
-      '<div class="metodos-pago">' + state.metodos.map(function (m) {
-        return '<div class="mp-item' + (state.pagos.some(function (p) { return p.id_metodo_pago === m.id; }) ? ' active' : '') + '" data-act-met="' + m.id + '">' + U.esc(m.nombre) + '</div>';
-      }).join('') + '</div>' +
-      '<div id="pos-pagos-det"></div>';
-    var det = document.getElementById('pos-pagos-det');
-    if (state.pagos.length) {
-      det.innerHTML = state.pagos.map(function (p, idx) {
-        return '<div class="pos-resumen">' +
-          '<span>' + U.esc(p.nombre) + (idx === 0 && soloEfectivo ? ' <small class="muted">(efectivo)</small>' : '') + '</span>' +
-          '<span style="display:inline-flex;align-items:center;gap:6px">' +
-          '<input type="number" min="0" step="0.01" data-act-pagomonto data-idx="' + idx + '" style="width:110px" value="' + p.monto + '">' +
-          (state.pagos.length > 1 ? '<button class="btn btn-danger btn-sm" data-act-quitpago data-idx="' + idx + '">✕</button>' : '') +
-          '</span></div>';
-      }).join('') + '<p class="right">Pendiente: <strong id="pos-pendiente"></strong></p>';
-    } else {
-      det.innerHTML = '<p class="muted">Seleccioná al menos un método de pago</p>';
-    }
+      '<div class="metodos-pago" role="radiogroup" aria-label="Método de pago">' +
+      state.metodos.map(function (m) {
+        var act = m.id === state.metSel;
+        return '<div class="mp-item' + (act ? ' active' : '') + '" data-act-met="' + m.id + '" role="radio" aria-checked="' + act + '" tabindex="0">' +
+          '<span class="mp-radio">' + (act ? '◉' : '○') + '</span>' + U.esc(m.nombre) + '</div>';
+      }).join('') +
+      '</div>' +
+      '<div id="pos-pagos-det">' +
+      '<div class="pos-resumen">' +
+      '<span>Método: <strong>' + U.esc(sel ? sel.nombre : '') + '</strong></span>' +
+      '<span style="display:inline-flex;align-items:center;gap:8px">' +
+      '<label style="margin:0;font-size:12px">Monto recibido<input type="number" min="0" step="0.01" data-act-recibido value="' + (Math.max(0, recibidoActual())).toFixed(2) + '" style="width:110px"></label>' +
+      '</span>' +
+      '</div>' +
+      '<div class="pos-vuelto" id="pos-vuelto"></div>' +
+      '<p class="right">Falta cobrar (pendiente): <strong id="pos-pendiente"></strong></p>' +
+      '</div>';
     actualizarPendiente();
+    var recInput = host.querySelector('[data-act-recibido]');
+    if (recInput) recInput.disabled = state.cart.length === 0;
   }
 
   function focusBuscar() {
@@ -195,18 +214,22 @@
     var items = state.cart.map(function (i) {
       return { id_producto: i.id_producto, cantidad: i.cantidad };
     });
-    var pagos = state.pagos.map(function (p) {
-      return { id_metodo_pago: p.id_metodo_pago, monto: Number(p.monto) };
-    });
+    var total = totalCarrito();
+    var sel = state.metodos.find(function (m) { return m.id === state.metSel; });
+    if (!sel) { U.toast('Seleccioná un método de pago', 'warn'); return; }
+    var rec = recibidoActual();
+    if (rec + 0.005 < total) { U.toast('Falta dinero para completar el cobro', 'warn'); return; }
+    var pagos = [{ id_metodo_pago: sel.id, monto: total }];
     U.api('POST', '/ventas', { items: items, pagos: pagos }).then(function (r) {
       U.toast('Venta ' + r.numero + ' registrada', 'ok');
       var root = document.getElementById('view');
-      var vuelto = state.pagos.reduce(function (a, p) { return a + Number(p.monto || 0); }, 0) - r.total;
+      var vuelto = Math.round((rec - total) * 100) / 100;
       root.innerHTML =
         '<div class="card" style="max-width:520px;margin:20px auto;text-align:center">' +
         '<div style="font-size:46px">✅</div>' +
         '<h2>Venta registrada</h2>' +
         '<p>N° <strong>' + U.esc(r.numero) + '</strong></p>' +
+        (sel.nombre !== 'Efectivo' ? '<p>Se cobró con <strong>' + U.esc(sel.nombre) + '</strong></p>' : '') +
         '<p class="v" style="font-size:26px;font-weight:700">' + U.fmt(r.total) + '</p>' +
         (vuelto > 0.005 ? '<p>Vuelto: <strong>' + U.fmt(vuelto) + '</strong></p>' : '') +
         '<div class="flex center mt" style="justify-content:center">' +
@@ -247,9 +270,10 @@
         state.metodos = (conf.metodos_pago || []).filter(function (m) { return m.activo; });
         state.usableStock = String(conf.usar_stock || '1') !== '0';
         var defaultMet = state.metodos.find(function (m) { return /efectiv/i.test(m.nombre); }) || state.metodos[0];
-        state.pagos = [{ id_metodo_pago: defaultMet.id, nombre: defaultMet.nombre, monto: 0 }];
+        state.metSel = defaultMet ? defaultMet.id : null;
       } catch (e) {
         state.metodos = [{ id: 1, nombre: 'Efectivo' }];
+        state.metSel = 1;
       }
       reRenderCarrito();
       reRenderPagos(true);
@@ -313,29 +337,23 @@
         reRenderCarrito();
         reRenderPagos();
       },
-      'input [data-act-pagomonto]': function (e, t) {
-        var idx = Number(t.getAttribute('data-idx'));
-        state.pagos[idx].monto = Number(t.value) || 0;
+      'input [data-act-recibido]': function (e, t) {
+        state.recibido = Number(t.value) || 0;
         actualizarPendiente();
-      },
-      'click [data-act-quitpago]': function (e, t) {
-        var idx = Number(t.getAttribute('data-idx'));
-        state.pagos.splice(idx, 1);
-        reRenderPagos(true);
       },
       'click [data-act-met]': function (e, t) {
         var mid = Number(t.getAttribute('data-act-met'));
-        var m = state.metodos.find(function (x) { return x.id === mid; });
-        if (!m) return;
-        var ex = state.pagos.findIndex(function (p) { return p.id_metodo_pago === mid; });
-        var total = Math.round(totalCarrito() * 100) / 100;
-        if (ex > -1) {
-          state.pagos.splice(ex, 1);
-        } else {
-          var suma = state.pagos.reduce(function (a, p) { return a + Number(p.monto || 0); }, 0);
-          state.pagos.push({ id_metodo_pago: mid, nombre: m.nombre, monto: Math.round(Math.max(0, total - suma) * 100) / 100 });
-        }
+        if (!state.metodos.some(function (m) { return m.id === mid; })) return;
+        state.metSel = mid;
+        state.recibido = null;
         reRenderPagos(true);
+        focusBuscar();
+      },
+      'keydown [data-act-met]': function (e, t) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          t.click();
+        }
       },
       'click #btn-cobrar': function () {
         cobrar();

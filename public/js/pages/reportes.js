@@ -46,12 +46,7 @@
   }
 
   function renderDonut(el, items) {
-    var total = items.reduce(function (a, i) { return a + i.value; }, 0);
-    if (!total) { el.innerHTML = '<div class="muted">Sin datos</div>'; return; }
     U.renderDonut(el, items);
-    el.innerHTML += '<div class="legend">' + items.map(function (i, k) {
-      return '<span class="muted">' + U.fmtQty(i.value) + '</span>';
-    }).join('') + '</div>';
   }
 
   function cargarGanancias(root) {

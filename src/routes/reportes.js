@@ -154,6 +154,82 @@ router.get('/caja', requireAuth, handle((req, res) => {
   res.json({ desde, hasta, resumen, movimientos: mv });
 }));
 
+router.get('/estadisticas', requireAuth, handle((req, res) => {
+  const db = getDB();
+  const { desde, hasta } = req.query;
+  if (!desde || !hasta) return res.status(400).json({ error: 'Faltan fechas' });
+
+  const resumen = totalVentasPeriodo(desde, hasta);
+  resumen.ticket_promedio = resumen.ventas > 0 ? round2(resumen.total / resumen.ventas) : 0;
+
+  const porDia = db.prepare(`
+    SELECT date(creado_en) AS dia, ROUND(SUM(total),2) AS total, ROUND(SUM(ganancia),2) AS ganancia,
+      COUNT(*) AS ventas FROM ventas
+    WHERE estado='COMPLETADA' AND date(creado_en) BETWEEN ? AND ?
+    GROUP BY dia ORDER BY dia`).all(desde, hasta);
+
+  const egresosDia = db.prepare(`
+    SELECT date(creado_en) AS dia, ROUND(COALESCE(SUM(CASE WHEN tipo IN ('EGRESO','RETIRO') THEN monto END),0),2) AS egresos
+    FROM movimientos_caja WHERE date(creado_en) BETWEEN ? AND ?
+    GROUP BY dia ORDER BY dia`).all(desde, hasta);
+  const egMap = {};
+  egresosDia.forEach(function (r) { egMap[r.dia] = Number(r.egresos); });
+  const diario = porDia.map(function (p) {
+    return { dia: p.dia, total: p.total, ganancia: p.ganancia, ventas: p.ventas, egresos: egMap[p.dia] || 0 };
+  });
+
+  const porMetodo = db.prepare(`
+    SELECT m.nombre AS metodo, ROUND(SUM(pg.monto),2) AS total, COUNT(*) AS cantidad
+    FROM pagos pg JOIN ventas v ON v.id = pg.id_venta JOIN metodos_pago m ON m.id = pg.id_metodo_pago
+    WHERE v.estado='COMPLETADA' AND date(v.creado_en) BETWEEN ? AND ?
+    GROUP BY m.nombre ORDER BY total DESC`).all(desde, hasta);
+
+  const flujo = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN tipo='VENTA' THEN monto END),0) ingresos,
+      COALESCE(SUM(CASE WHEN tipo='INGRESO' THEN monto END),0) ingreso_manual,
+      COALESCE(SUM(CASE WHEN tipo='EGRESO' THEN monto END),0) egresos,
+      COALESCE(SUM(CASE WHEN tipo='RETIRO' THEN monto END),0) retiros
+    FROM movimientos_caja WHERE date(creado_en) BETWEEN ? AND ?`).get(desde, hasta);
+
+  const topProductos = db.prepare(`
+    SELECT dv.nombre, SUM(dv.cantidad) cantidad, ROUND(SUM(dv.total),2) total, ROUND(SUM(dv.ganancia),2) ganancia
+    FROM detalle_ventas dv JOIN ventas v ON v.id=dv.id_venta
+    WHERE v.estado='COMPLETADA' AND date(v.creado_en) BETWEEN ? AND ?
+    GROUP BY dv.nombre ORDER BY cantidad DESC, dv.nombre LIMIT 6`).all(desde, hasta);
+
+  const menosProductos = db.prepare(`
+    SELECT dv.nombre, SUM(dv.cantidad) cantidad, ROUND(SUM(dv.total),2) total
+    FROM detalle_ventas dv JOIN ventas v ON v.id=dv.id_venta
+    WHERE v.estado='COMPLETADA' AND date(v.creado_en) BETWEEN ? AND ?
+    GROUP BY dv.nombre ORDER BY cantidad ASC, dv.nombre LIMIT 6`).all(desde, hasta);
+
+  const diasTop = db.prepare(`
+    SELECT date(creado_en) AS dia, ROUND(SUM(total),2) AS total, COUNT(*) AS ventas
+    FROM ventas WHERE estado='COMPLETADA' AND date(creado_en) BETWEEN ? AND ?
+    GROUP BY date(creado_en) ORDER BY total DESC LIMIT 5`).all(desde, hasta);
+
+  res.json({
+    desde, hasta,
+    resumen: {
+      total: resumen.total, ganancia: resumen.ganancia, costo: resumen.costo,
+      ventas: Number(resumen.ventas), unidades: Number(resumen.unidades),
+      margen: resumen.margen || 0, ticket_promedio: resumen.ticket_promedio
+    },
+    por_dia: porDia,
+    diario: diario,
+    por_metodo: porMetodo,
+    flujo: {
+      ingresos: Number(flujo.ingresos), ingreso_manual: Number(flujo.ingreso_manual),
+      egresos: Number(flujo.egresos), retiros: Number(flujo.retiros),
+      perdida: Number(flujo.egresos) + Number(flujo.retiros)
+    },
+    top_productos: topProductos,
+    menos_productos: menosProductos,
+    dias_top: diasTop
+  });
+}));
+
 router.get('/resumen-mensual', requireAuth, handle((req, res) => {
   const db = getDB();
   const anio = Number(req.query.anio) || new Date().getFullYear();
